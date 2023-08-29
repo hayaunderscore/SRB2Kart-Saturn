@@ -1527,7 +1527,7 @@ musicdef_t *S_FindMusicCredit(const char *musname)
 	musicdef_t *def = musicdefstart;
 
 	if (!def) // No definitions
-		return;
+		return NULL;
 
 	while (def)
 	{
@@ -1550,6 +1550,8 @@ musicdef_t *S_FindMusicCredit(const char *musname)
 void S_ShowSpecifiedMusicCredit(const char *musname)
 {
 	musicdef_t *def;
+
+	if (digital_disabled) return;
 
 	if (!cv_songcredits.value || demo.rewinding)
 		return;

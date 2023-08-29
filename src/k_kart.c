@@ -59,6 +59,7 @@ consvar_t cv_newspeedometer = {"newspeedometer", "Off", CV_SAVE, CV_OnOff, NULL,
 
 consvar_t cv_saltyhop = {"hardcodehop", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 consvar_t cv_saltyhopsfx = {"hardcodehopsfx", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+consvar_t cv_saltysquish = {"hardcodehopsquish", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 
 // SOME IMPORTANT VARIABLES DEFINED IN DOOMDEF.H:
 // gamespeed is cc (0 for easy, 1 for normal, 2 for hard)
@@ -3007,6 +3008,15 @@ static void K_StretchPlayerGravity(player_t *p)
     I_Assert(p != NULL);
 	I_Assert(p->mo != NULL);
 	I_Assert(!P_MobjWasRemoved(p->mo));
+	
+	if (p->mo->slamsoundtimer)
+		p->mo->slamsoundtimer--;
+
+	if (cv_slamsound.value == 1 && (p->mo->eflags & MFE_JUSTHITFLOOR) && p->mo->stretchslam > 4*mos && !p->mo->slamsoundtimer)
+	{
+		S_StartSound(p->mo, sfx_s3k4c);
+		p->mo->slamsoundtimer = TICRATE;
+	}
 
     if (!P_IsObjectOnGround(p->mo))
     {
@@ -3066,8 +3076,8 @@ static void K_QuiteSaltyHop(player_t *p)
 		p->mo->salty_zoffset = 0;
 		p->mo->salty_momz = 0;
 		p->mo->init_salty = true;
-	}
-	else if (p->mo->salty_jump) {
+	}	
+	else if ((p->mo->salty_jump)) {
 		if (p->mo->eflags & MFE_JUSTHITFLOOR) {
 			p->mo->salty_zoffset = 0;
 		} else if (P_IsObjectOnGround(p->mo)) {
@@ -3084,8 +3094,8 @@ static void K_QuiteSaltyHop(player_t *p)
 			p->mo->salty_zoffset = 0;
 			p->mo->salty_momz = 0;
 			// shlamma damma
-			p->mo->stretchslam += (8*mos);
-		} else if (p->mo->salty_zoffset >= 0) {
+			p->mo->stretchslam += cv_saltysquish.value ? (8*mos) : 0;
+		} else if (p->mo->salty_zoffset >= 0 && cv_saltysquish.value) {
 			// goofy ahh hack
 			p->mo->spriteyscale += (mos/8);
 			p->mo->spritexscale -= (mos/8);
@@ -8639,27 +8649,29 @@ static void K_drawKartMinimapHead(mobj_t *mo, INT32 x, INT32 y, INT32 flags, pat
 	amxpos = amnumxpos + ((x + AutomapPic->width/2 - (facemmapprefix[skin]->width/2))<<FRACBITS);
 	amypos = amnumypos + ((y + AutomapPic->height/2 - (facemmapprefix[skin]->height/2))<<FRACBITS);
 
-	// do we want this? it feels unnecessary. easier to just modify the amnumxpos?
-	/*if (encoremode)
-	{
-		flags |= V_FLIP;
-		amxpos = -amnumxpos + ((x + AutomapPic->width/2 + (facemmapprefix[skin]->width/2))<<FRACBITS);
-	}*/
-
 	if (!mo->color) // 'default' color
 		V_DrawSciencePatch(amxpos, amypos, flags, facemmapprefix[skin], FRACUNIT);
 	else
 	{
-		UINT8 *colormap;
-		if (mo->colorized)
-			colormap = R_GetTranslationColormap(TC_RAINBOW, mo->color, GTC_CACHE);
-		else
-			colormap = R_GetTranslationColormap(skin, mo->color, GTC_CACHE);
-		V_DrawFixedPatch(amxpos, amypos, FRACUNIT, flags, facemmapprefix[skin], colormap);
+		UINT8 *colormap = R_GetTranslationColormap((mo->colorized) ? TC_RAINBOW : skin, mo->color, GTC_CACHE);
+		
+		if (cv_minihead.value == 1)
+			V_DrawFixedPatch(amxpos + (2 * FRACUNIT), amypos + (2 * FRACUNIT), FRACUNIT/2, flags, facemmapprefix[skin], colormap);
+		else if (cv_minihead.value == 0)
+			V_DrawFixedPatch(amxpos, amypos, FRACUNIT, flags, facemmapprefix[skin], colormap);
+
+		if (cv_showminimapnames.value && !(modeattacking || gamestate == GS_TIMEATTACK))
+		{
+			const char *player_name = va("%c%s", V_GetSkincolorChar(mo->color), player_names[mo->player - players]);
+			V_DrawCenteredSmallStringAtFixed(amxpos + (4 * FRACUNIT), amypos - (3 * FRACUNIT), V_ALLOWLOWERCASE|flags, player_name);
+		}
 		if (mo->player
 			&& ((G_RaceGametype() && mo->player->kartstuff[k_position] == spbplace)
 			|| (G_BattleGametype() && K_IsPlayerWanted(mo->player))))
 		{
+			if (cv_minihead.value == 1)
+			V_DrawFixedPatch(amxpos, amypos, FRACUNIT / 2, flags, kp_wantedreticle, NULL);
+			else if (cv_minihead.value == 0)
 			V_DrawFixedPatch(amxpos - (4<<FRACBITS), amypos - (4<<FRACBITS), FRACUNIT, flags, kp_wantedreticle, NULL);
 		}
 	}
@@ -9236,6 +9248,9 @@ static void K_drawChallengerScreen(void)
 
 static void K_drawLapStartAnim(void)
 {
+	if (! cv_showlapemblem.value)
+		return;
+	
 	// This is an EVEN MORE insanely complicated animation.
 	const UINT8 progress = 80-stplyr->kartstuff[k_lapanimation];
 	UINT8 *colormap = R_GetTranslationColormap(TC_DEFAULT, stplyr->skincolor, GTC_CACHE);
