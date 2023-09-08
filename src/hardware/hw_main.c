@@ -641,9 +641,6 @@ void HWR_RenderPlane(extrasubsector_t *xsub, boolean isceiling, fixed_t fixedhei
 	// reference point for flat texture coord for each vertex around the polygon
 	flatxref = (float)(((fixed_t)pv->x & (~flatflag)) / fflatsize);
 	flatyref = (float)(((fixed_t)pv->y & (~flatflag)) / fflatsize);
-	
-	// transform
-	v3d = planeVerts;
 
 	if (FOFsector != NULL)
 	{
@@ -3400,7 +3397,7 @@ void HWR_Subsector(size_t num)
 					HWR_GetFlat(levelflats[*rover->toppic].lumpnum, R_NoEncore(gr_frontsector, true));
 					light = R_GetPlaneLight(gr_frontsector, centerHeight, viewz < cullHeight ? true : false);
 					HWR_RenderPlane(&extrasubsectors[num], true, *rover->topheight, (rover->flags & FF_RIPPLE ? PF_Ripple : 0)|PF_Occlude, *gr_frontsector->lightlist[light].lightlevel, levelflats[*rover->toppic].lumpnum,
-					                rover->master->frontsector, 255, gr_frontsector->lightlist[light].extra_colormap, sub);
+					                  rover->master->frontsector, 255, gr_frontsector->lightlist[light].extra_colormap, sub);
 				}
 			}
 		}
@@ -5759,6 +5756,7 @@ void RecursivePortalRendering(portal_t *rootportal, const float fpov, player_t *
 			HWR_PortalFrame(rootportal);// for portalclipsector, it could have gone null from search
 			HWR_PortalClipping(rootportal);
 		}
+		//drawcount = 0;
 		validcount++;
 		if (cv_grbatching.value)
 			HWD.pfnStartBatching();
@@ -5797,7 +5795,7 @@ void RecursivePortalRendering(portal_t *rootportal, const float fpov, player_t *
 			HWR_SetTransform(fpov, player);// restore transform
 		}
 		gr_collect_skywalls = false;
-
+		
 		ps_numsprites.value.i = gr_visspritecount;
 		PS_START_TIMING(ps_hw_spritesorttime);
 		HWR_SortVisSprites();
@@ -5981,6 +5979,7 @@ void HWR_RenderSinglePortal(portal_t *portal, size_t portalnum, float fpov, play
 	// Render the BSP from the new viewpoint.
 	portalcullsector = gr_portalcullsectors[portalnum];
 	HWR_RenderBSPNode((INT32)numnodes - 1);
+
 	HWR_SortVisSprites();
 	HWR_DrawSprites();
 	HWR_RenderDrawNodes();
