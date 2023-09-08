@@ -208,6 +208,8 @@ FTransform atransform;
 static float gr_viewx, gr_viewy, gr_viewz;
 float gr_viewsin, gr_viewcos;
 
+static fixed_t dup_viewx, dup_viewy, dup_viewz;
+
 static angle_t gr_aimingangle;
 static float gr_viewludsin, gr_viewludcos;
 
@@ -538,7 +540,7 @@ static FUINT HWR_CalcWallLight(FUINT lightnum, fixed_t v1x, fixed_t v1y, fixed_t
 
 // HWR_RenderPlane
 // Render a floor or ceiling convex polygon
-void HWR_RenderPlane(extrasubsector_t *xsub, boolean isceiling, fixed_t fixedheight, FBITFIELD PolyFlags, INT32 lightlevel, lumpnum_t lumpnum, sector_t *FOFsector, UINT8 alpha, extracolormap_t *planecolormap)
+void HWR_RenderPlane(extrasubsector_t *xsub, boolean isceiling, fixed_t fixedheight, FBITFIELD PolyFlags, INT32 lightlevel, lumpnum_t lumpnum, sector_t *FOFsector, UINT8 alpha, extracolormap_t *planecolormap, subsector_t *subsector)
 {
 	polyvertex_t *  pv;
 	float           height; //constant y for all points on the convex flat polygon
@@ -694,39 +696,32 @@ void HWR_RenderPlane(extrasubsector_t *xsub, boolean isceiling, fixed_t fixedhei
 		flatyref = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINESINE(angle)) + FixedMul(tempytow, FINECOSINE(angle))));
 	}
 
-	for (i = 0; i < nrPlaneVerts; i++,v3d++,pv++)
-	{
-		// Hurdler: add scrolling texture on floor/ceiling
-		v3d->s = (float)((pv->x / fflatsize) - flatxref + scrollx);
-		v3d->t = (float)(flatyref - (pv->y / fflatsize) + scrolly);
-
-		//v3d->s = (float)(pv->x / fflatsize);
-		//v3d->t = (float)(pv->y / fflatsize);
-
-		// Need to rotate before translate
-		if (angle) // Only needs to be done if there's an altered angle
-		{
-			tempxsow = FLOAT_TO_FIXED(v3d->s);
-			tempytow = FLOAT_TO_FIXED(v3d->t);
-			v3d->s = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINECOSINE(angle)) - FixedMul(tempytow, FINESINE(angle))));
-			v3d->t = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINESINE(angle)) + FixedMul(tempytow, FINECOSINE(angle))));
-		}
-
-		//v3d->s = (float)(v3d->s - flatxref + scrollx);
-		//v3d->t = (float)(flatyref - v3d->t + scrolly);
-
-		v3d->x = pv->x;
-		v3d->y = height;
-		v3d->z = pv->y;
-
-#ifdef ESLOPE
-		if (slope)
-		{
-			fixedheight = P_GetZAt(slope, FLOAT_TO_FIXED(pv->x), FLOAT_TO_FIXED(pv->y));
-			v3d->y = FIXED_TO_FLOAT(fixedheight);
-		}
-#endif
-	}
+#define SETUP3DVERT(vert, vx, vy) {\
+		/* Hurdler: add scrolling texture on floor/ceiling */\
+			vert->s = (float)(((vx) / fflatsize) - flatxref + scrollx);\
+			vert->t = (float)(flatyref - ((vy) / fflatsize) + scrolly);\
+\
+		/* Need to rotate before translate */\
+		if (angle) /* Only needs to be done if there's an altered angle */\
+		{\
+			tempxsow = FLOAT_TO_FIXED(vert->s);\
+			tempytow = FLOAT_TO_FIXED(vert->t);\
+			vert->s = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINECOSINE(angle)) - FixedMul(tempytow, FINESINE(angle))));\
+			vert->t = (FIXED_TO_FLOAT(FixedMul(tempxsow, FINESINE(angle)) + FixedMul(tempytow, FINECOSINE(angle))));\
+		}\
+\
+		vert->x = (vx);\
+		vert->y = height;\
+		vert->z = (vy);\
+\
+		if (slope)\
+		{\
+			fixedheight = P_GetZAt(slope, FLOAT_TO_FIXED((vx)), FLOAT_TO_FIXED((vy)));\
+			vert->y = FIXED_TO_FLOAT(fixedheight);\
+		}\
+}
+	for (i = 0, v3d = planeVerts; i < nrPlaneVerts; i++,v3d++,pv++)
+		SETUP3DVERT(v3d, pv->x, pv->y);
 
 	HWR_Lighting(&Surf, lightlevel, planecolormap);
 
@@ -745,7 +740,80 @@ void HWR_RenderPlane(extrasubsector_t *xsub, boolean isceiling, fixed_t fixedhei
 	else
 		HWD.pfnSetShader(1);	// floor shader
 
-	HWD.pfnDrawPolygon(&Surf, planeVerts, nrPlaneVerts, PolyFlags);
+	HWD.pfnDrawPolygon(&Surf, planeVerts, nrPlaneVerts, PolyFlags, false);
+
+	if (subsector)
+	{
+		// Horizon lines
+		FOutVector horizonpts[6];
+		float dist, vx, vy;
+		float x1, y1, xd, yd;
+		UINT8 numplanes, j;
+		vertex_t v; // For determining the closest distance from the line to the camera, to split render planes for minimum distortion;
+
+		const float renderdist = 27000.0f; // How far out to properly render the plane
+		const float farrenderdist = 32768.0f; // From here, raise plane to horizon level to fill in the line with some texture distortion
+
+		seg_t *line = &segs[subsector->firstline];
+
+		for (i = 0; i < subsector->numlines; i++, line++)
+		{
+			if (line->linedef->special == 41 && R_PointOnSegSide(dup_viewx, dup_viewy, line) == 0)
+			{
+				P_ClosestPointOnLine(viewx, viewy, line->linedef, &v);
+				dist = FIXED_TO_FLOAT(R_PointToDist(v.x, v.y));
+
+				x1 = ((polyvertex_t *)line->pv1)->x;
+				y1 = ((polyvertex_t *)line->pv1)->y;
+				xd = ((polyvertex_t *)line->pv2)->x - x1;
+				yd = ((polyvertex_t *)line->pv2)->y - y1;
+
+				// Based on the seg length and the distance from the line, split horizon into multiple poly sets to reduce distortion
+				dist = sqrtf((xd*xd) + (yd*yd)) / dist / 16.0f;
+				if (dist > 100.0f)
+					numplanes = 100;
+				else
+					numplanes = (UINT8)dist + 1;
+
+				for (j = 0; j < numplanes; j++)
+				{
+					// Left side
+					vx = x1 + xd * j / numplanes;
+					vy = y1 + yd * j / numplanes;
+					SETUP3DVERT((&horizonpts[1]), vx, vy);
+
+					dist = sqrtf(powf(vx - gr_viewx, 2) + powf(vy - gr_viewy, 2));
+					vx = (vx - gr_viewx) * renderdist / dist + gr_viewx;
+					vy = (vy - gr_viewy) * renderdist / dist + gr_viewy;
+					SETUP3DVERT((&horizonpts[0]), vx, vy);
+
+					// Right side
+					vx = x1 + xd * (j+1) / numplanes;
+					vy = y1 + yd * (j+1) / numplanes;
+					SETUP3DVERT((&horizonpts[2]), vx, vy);
+
+					dist = sqrtf(powf(vx - gr_viewx, 2) + powf(vy - gr_viewy, 2));
+					vx = (vx - gr_viewx) * renderdist / dist + gr_viewx;
+					vy = (vy - gr_viewy) * renderdist / dist + gr_viewy;
+					SETUP3DVERT((&horizonpts[3]), vx, vy);
+
+					// Horizon fills
+					vx = (horizonpts[0].x - gr_viewx) * farrenderdist / renderdist + gr_viewx;
+					vy = (horizonpts[0].z - gr_viewy) * farrenderdist / renderdist + gr_viewy;
+					SETUP3DVERT((&horizonpts[5]), vx, vy);
+					horizonpts[5].y = gr_viewz;
+
+					vx = (horizonpts[3].x - gr_viewx) * farrenderdist / renderdist + gr_viewx;
+					vy = (horizonpts[3].z - gr_viewy) * farrenderdist / renderdist + gr_viewy;
+					SETUP3DVERT((&horizonpts[4]), vx, vy);
+					horizonpts[4].y = gr_viewz;
+
+					// Draw
+					HWD.pfnDrawPolygon(&Surf, horizonpts, 6, PolyFlags, true);
+				}
+			}
+		}
+	}
 }
 
 #ifdef WALLSPLATS
@@ -809,7 +877,7 @@ static void HWR_DrawSegsSplats(FSurfaceInfo * pSurf)
 		}
 
 		HWD.pfnSetShader(2);	// wall shader
-		HWD.pfnDrawPolygon(&pSurf, wallVerts, 4, i|PF_Modulated|PF_Decal);
+		HWD.pfnDrawPolygon(&pSurf, wallVerts, 4, i|PF_Modulated|PF_Decal, false);
 	}
 }
 #endif
@@ -851,7 +919,7 @@ void HWR_ProjectWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend
 		blendmode &= ~PF_Masked;
 	}
 
-	HWD.pfnDrawPolygon(pSurf, wallVerts, 4, blendmode|PF_Modulated|PF_Occlude);
+	HWD.pfnDrawPolygon(pSurf, wallVerts, 4, blendmode|PF_Modulated|PF_Occlude, false);
 
 #ifdef WALLSPLATS
 	if (gr_curline->linedef->splats && cv_splats.value)
@@ -1147,7 +1215,7 @@ void HWR_DrawSkyWallList()
 	HWD.pfnUnSetShader();
 	for (i = 0; i < skyWallVertexArraySize; i++)
 	{
-		HWD.pfnDrawPolygon(&surf, skyWallVertexArray + i * 4, 4, PF_Occlude|PF_Invisible|PF_NoTexture);
+		HWD.pfnDrawPolygon(&surf, skyWallVertexArray + i * 4, 4, PF_Occlude|PF_Invisible|PF_NoTexture, false);
 	}
 }
 
@@ -2977,7 +3045,7 @@ void HWR_RenderPolyObjectPlane(polyobj_t *polysector, boolean isceiling, fixed_t
 		blendmode |= PF_Masked|PF_Modulated;
 
 	HWD.pfnSetShader(1);	// floor shader
-	HWD.pfnDrawPolygon(&Surf, planeVerts, nrPlaneVerts, blendmode);
+	HWD.pfnDrawPolygon(&Surf, planeVerts, nrPlaneVerts, blendmode, false);
 }
 
 void HWR_AddPolyObjectPlanes(void)
@@ -3198,7 +3266,7 @@ void HWR_Subsector(size_t num)
 					// Hack to make things continue to work around slopes.
 					locFloorHeight == cullFloorHeight ? locFloorHeight : gr_frontsector->floorheight,
 					// We now return you to your regularly scheduled rendering.
-					PF_Occlude, floorlightlevel, levelflats[gr_frontsector->floorpic].lumpnum, NULL, 255, floorcolormap);
+					PF_Occlude, floorlightlevel, levelflats[gr_frontsector->floorpic].lumpnum, NULL, 255, floorcolormap, sub);
 			}
 		}
 	}
@@ -3214,7 +3282,7 @@ void HWR_Subsector(size_t num)
 					// Hack to make things continue to work around slopes.
 					locCeilingHeight == cullCeilingHeight ? locCeilingHeight : gr_frontsector->ceilingheight,
 					// We now return you to your regularly scheduled rendering.
-					PF_Occlude, ceilinglightlevel, levelflats[gr_frontsector->ceilingpic].lumpnum,NULL, 255, ceilingcolormap);
+					PF_Occlude, ceilinglightlevel, levelflats[gr_frontsector->ceilingpic].lumpnum,NULL, 255, ceilingcolormap, sub);
 			}
 		}
 	}
@@ -3280,7 +3348,7 @@ void HWR_Subsector(size_t num)
 					HWR_GetFlat(levelflats[*rover->bottompic].lumpnum, R_NoEncore(gr_frontsector, false));
 					light = R_GetPlaneLight(gr_frontsector, centerHeight, viewz < cullHeight ? true : false);
 					HWR_RenderPlane(&extrasubsectors[num], false, *rover->bottomheight, (rover->flags & FF_RIPPLE ? PF_Ripple : 0)|PF_Occlude, *gr_frontsector->lightlist[light].lightlevel, levelflats[*rover->bottompic].lumpnum,
-					                rover->master->frontsector, 255, gr_frontsector->lightlist[light].extra_colormap);
+					                rover->master->frontsector, 255, gr_frontsector->lightlist[light].extra_colormap, sub);
 				}
 			}
 
@@ -3776,7 +3844,7 @@ static void HWR_DrawSpriteShadow(gr_vissprite_t *spr, GLPatch_t *gpatch, float t
 	{
 		sSurf.PolyColor.s.alpha = (UINT8)(sSurf.PolyColor.s.alpha - floorheight/4);
 		HWD.pfnSetShader(1);	// floor shader
-		HWD.pfnDrawPolygon(&sSurf, swallVerts, 4, PF_Translucent|PF_Modulated);
+		HWD.pfnDrawPolygon(&sSurf, swallVerts, 4, PF_Translucent|PF_Modulated, false);
 	}
 }
 
@@ -4143,7 +4211,7 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 		Surf.PolyColor.s.alpha = alpha;
 
 		HWD.pfnSetShader(3);	// sprite shader
-		HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated);
+		HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 
 		top = bot;
 #ifdef ESLOPE
@@ -4183,7 +4251,7 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 	Surf.PolyColor.s.alpha = alpha;
 
 	HWD.pfnSetShader(3);	// sprite shader
-	HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated);
+	HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 }
 
 // -----------------+
@@ -4336,7 +4404,7 @@ static void HWR_DrawSprite(gr_vissprite_t *spr)
 		}
 
 		HWD.pfnSetShader(3);	// sprite shader
-		HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated);
+		HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 	}
 }
 
@@ -4430,7 +4498,7 @@ static inline void HWR_DrawPrecipitationSprite(gr_vissprite_t *spr)
 	}
 
 	HWD.pfnSetShader(3);	// sprite shader
-	HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated);
+	HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 }
 
 // --------------------------------------------------------------------------
@@ -5487,6 +5555,11 @@ void HWR_SetTransform(float fpov, player_t *player)
 	postimg_t *postprocessor = &postimgtype[0];
 	INT32 i;
 
+	// copy view cam position for local use
+	dup_viewx = viewx;
+	dup_viewy = viewy;
+	dup_viewz = viewz;
+
 	gr_viewx = FIXED_TO_FLOAT(viewx);
 	gr_viewy = FIXED_TO_FLOAT(viewy);
 	gr_viewz = FIXED_TO_FLOAT(viewz);
@@ -6055,7 +6128,7 @@ void HWR_RenderWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend,
 
 	blendmode |= PF_Modulated;	// No PF_Occlude means overlapping (incorrect) transparency
 
-	HWD.pfnDrawPolygon(pSurf, wallVerts, 4, blendmode);
+	HWD.pfnDrawPolygon(pSurf, wallVerts, 4, blendmode, false);
 
 #ifdef WALLSPLATS
 	if (gr_curline->linedef->splats && cv_splats.value)
@@ -6106,7 +6179,7 @@ void HWR_DoPostProcessor(player_t *player)
 
 		Surf.PolyColor.s.alpha = 0xc0; // match software mode
 
-		HWD.pfnDrawPolygon(&Surf, v, 4, PF_Modulated|PF_Translucent|PF_NoTexture|PF_NoDepthTest);
+		HWD.pfnDrawPolygon(&Surf, v, 4, PF_Modulated|PF_Translucent|PF_NoTexture|PF_NoDepthTest, false);
 	}
 
 	if (!cv_grscreentextures.value) // screen textures are needed for the rest of the effects
