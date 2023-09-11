@@ -1015,12 +1015,6 @@ static void IdentifyVersion(void)
 #ifdef USE_PATCH_KART
 	D_AddFile(va(pandf,srb2waddir,"patch.kart"), startupwadfiles);
 #endif
-	// completely optional
-	if (FIL_ReadFileOK(va(pandf,srb2waddir,"extra.kart"))) {
-		D_AddFile(va(pandf,srb2waddir,"extra.kart"), startupwadfiles);
-		found_extra_kart = true;
-	}
-
 #if !defined (HAVE_SDL) || defined (HAVE_MIXER)
 #define MUSICTEST(str) \
 	{\
@@ -1035,6 +1029,11 @@ static void IdentifyVersion(void)
 	MUSICTEST("music.kart")
 #undef MUSICTEST
 #endif
+	// completely optional
+	if (FIL_ReadFileOK(va(pandf,srb2waddir,"extra.kart"))) {
+		D_AddFile(va(pandf,srb2waddir,"extra.kart"), startupwadfiles);
+		found_extra_kart = true;
+	}
 }
 
 /* ======================================================================== */
