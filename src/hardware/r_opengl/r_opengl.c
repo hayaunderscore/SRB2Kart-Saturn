@@ -598,7 +598,7 @@ typedef enum
 	// palette rendering
 	gluniform_palette,
 	gluniform_color_lookup,
-	gluniform_lighttable_
+	gluniform_lighttable_tex,
 	
 	// misc.
 	gluniform_leveltime,
