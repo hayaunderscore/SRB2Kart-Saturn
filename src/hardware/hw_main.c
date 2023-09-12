@@ -89,6 +89,7 @@ consvar_t cv_grcorrecttricks = {"gr_correcttricks", "Off", 0, CV_OnOff, NULL, 0,
 consvar_t cv_grsolvetjoin = {"gr_solvetjoin", "On", 0, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 
 consvar_t cv_grbatching = {"gr_batching", "On", 0, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+consvar_t cv_grpaletteshader = {"gr_paletteshader", "Off", CV_CALL|CV_SAVE, CV_OnOff, CV_grpaletteshader_OnChange, 0, NULL, NULL, 0, 0, NULL};
 
 static CV_PossibleValue_t grrenderdistance_cons_t[] = {
 	{0, "Max"}, {1, "1024"}, {2, "2048"}, {3, "4096"}, {4, "6144"}, {5, "8192"},
@@ -153,6 +154,13 @@ static void CV_grpaletteshader_OnChange(void)
 		gr_use_palette_shader = cv_grpaletteshader.value;
 		R_ClearColormaps();
 	}
+}
+
+static void CV_grpaletteshader_OnChange(void)
+{
+	if (rendermode == render_opengl)
+		HWD.pfnSetSpecialState(HWD_SET_PALETTE_SHADER_ENABLED, cv_grpaletteshader.value);
+		gr_use_palette_shader = cv_grpaletteshader.value;
 }
 
 // ==========================================================================
@@ -3950,7 +3958,7 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 	FOutVector baseWallVerts[4]; // This is what the verts should end up as
 	GLPatch_t *gpatch;
 	FSurfaceInfo Surf;
-	const boolean hires = (spr->mobj && spr->mobj->skin && ((skin_t *)spr->mobj->skin)->flags & SF_HIRES);
+	const boolean hires = (spr->mobj && spr->mobj->skin && ((skin_t *)( (spr->mobj->localskin) ? spr->mobj->localskin : spr->mobj->skin ))->flags & SF_HIRES);
 	extracolormap_t *colormap;
 	FUINT lightlevel;
 	FBITFIELD blend = 0;
@@ -3974,7 +3982,7 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 	this_scale = FIXED_TO_FLOAT(spr->mobj->scale);
 
 	if (hires)
-		this_scale = this_scale * FIXED_TO_FLOAT(((skin_t *)spr->mobj->skin)->highresscale);
+		this_scale = this_scale * FIXED_TO_FLOAT(((skin_t *)( (spr->mobj->localskin) ? spr->mobj->localskin : spr->mobj->skin ))->highresscale);
 
 	gpatch = spr->gpatch; //W_CachePatchNum(spr->patchlumpnum, PU_CACHE);
 
@@ -4296,11 +4304,11 @@ static void HWR_DrawSprite(gr_vissprite_t *spr)
 	FOutVector wallVerts[4];
 	GLPatch_t *gpatch; // sprite patch converted to hardware
 	FSurfaceInfo Surf;
-	const boolean hires = (spr->mobj && spr->mobj->skin && ((skin_t *)spr->mobj->skin)->flags & SF_HIRES);
+	const boolean hires = (spr->mobj && spr->mobj->skin && ((skin_t *)( (spr->mobj->localskin) ? spr->mobj->localskin : spr->mobj->skin ))->flags & SF_HIRES);
 	if (spr->mobj)
 		this_scale = FIXED_TO_FLOAT(spr->mobj->scale);
 	if (hires)
-		this_scale = this_scale * FIXED_TO_FLOAT(((skin_t *)spr->mobj->skin)->highresscale);
+		this_scale = this_scale * FIXED_TO_FLOAT(((skin_t *)( (spr->mobj->localskin) ? spr->mobj->localskin : spr->mobj->skin ))->highresscale);
 
 	if (!spr->mobj)
 		return;
@@ -4847,8 +4855,19 @@ void HWR_DrawSprites(void)
 		else
 			if (spr->mobj && spr->mobj->skin && spr->mobj->sprite == SPR_PLAY)
 			{
+				md2_t *md2;
+				if (spr->mobj->localskin)
+				{
+					if (spr->mobj->skinlocal)
+						md2 = &md2_localplayermodels[(skin_t *)spr->mobj->localskin - localskins];
+					else
+						md2 = &md2_playermodels     [(skin_t *)spr->mobj->localskin -      skins];
+				}
+				else
+					md2 = &md2_playermodels[(skin_t *)spr->mobj->skin - skins];
+
 				// 8/1/19: Only don't display player models if no default SPR_PLAY is found.
-				if (!cv_grmdls.value || ((md2_playermodels[(skin_t*)spr->mobj->skin-skins].notfound || md2_playermodels[(skin_t*)spr->mobj->skin-skins].scale < 0.0f) && ((!cv_grfallbackplayermodel.value) || md2_models[SPR_PLAY].notfound || md2_models[SPR_PLAY].scale < 0.0f)) || spr->mobj->state == &states[S_PLAY_SIGN])
+				if (!cv_grmdls.value || ((md2->notfound || md2->scale < 0.0f) && ((!cv_grfallbackplayermodel.value) || md2_models[SPR_PLAY].notfound || md2_models[SPR_PLAY].scale < 0.0f)) || spr->mobj->state == &states[S_PLAY_SIGN])
 					HWR_DrawSprite(spr);
 				else
 					HWR_DrawMD2(spr);
@@ -5095,7 +5114,7 @@ void HWR_ProjectSprite(mobj_t *thing)
 	//Fab : 02-08-98: 'skin' override spritedef currently used for skin
 	if (thing->skin && thing->sprite == SPR_PLAY)
 	{
-		sprdef = &((skin_t *)thing->skin)->spritedef;
+		sprdef = &((skin_t *)( (thing->localskin) ? thing->localskin : thing->skin ))->spritedef;
 #ifdef ROTSPRITE
 		sprinfo = &spriteinfo[thing->sprite];
 #endif
@@ -5170,8 +5189,8 @@ void HWR_ProjectSprite(mobj_t *thing)
 		}
 	}
 
-	if (thing->skin && ((skin_t *)thing->skin)->flags & SF_HIRES)
-		this_scale = this_scale * FIXED_TO_FLOAT(((skin_t *)thing->skin)->highresscale);
+	if (thing->skin && ((skin_t *)( (thing->localskin) ? thing->localskin : thing->skin ))->flags & SF_HIRES)
+		this_scale = this_scale * FIXED_TO_FLOAT(((skin_t *)( (thing->localskin) ? thing->localskin : thing->skin ))->highresscale);
 
 	spr_width = spritecachedinfo[lumpoff].width;
 	spr_height = spritecachedinfo[lumpoff].height;
@@ -5330,10 +5349,7 @@ void HWR_ProjectSprite(mobj_t *thing)
 		if (thing->colorized)
 			vis->colormap = R_GetTranslationColormap(TC_RAINBOW, thing->color, GTC_CACHE);
 		else if (thing->skin && thing->sprite == SPR_PLAY) // This thing is a player!
-		{
-			size_t skinnum = (skin_t*)thing->skin-skins;
-			vis->colormap = R_GetTranslationColormap((INT32)skinnum, thing->color, GTC_CACHE);
-		}
+			vis->colormap = R_GetLocalTranslationColormap(thing->skin, thing->localskin, thing->color, GTC_CACHE, thing->skinlocal);
 		else
 			vis->colormap = R_GetTranslationColormap(TC_DEFAULT, thing->color, GTC_CACHE);
 	}

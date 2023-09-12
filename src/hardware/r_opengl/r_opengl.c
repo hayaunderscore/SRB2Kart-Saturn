@@ -598,7 +598,7 @@ typedef enum
 	// palette rendering
 	gluniform_palette,
 	gluniform_color_lookup,
-	gluniform_lighttable_tex,
+	gluniform_lighttable_
 	
 	// misc.
 	gluniform_leveltime,
@@ -819,7 +819,6 @@ static gl_shaderprogram_t gl_shaderprograms[MAXSHADERPROGRAMS];
 		"int pal_idx = int(texture3D(lookup_tex, vec3((63.0/64.0) * texel + 1.0 / 128.0))[0] * 255.0);\n" \
 		"gl_FragColor = vec4(float(palette[pal_idx*3])/255.0, float(palette[pal_idx*3+1])/255.0, float(palette[pal_idx*3+2])/255.0, 1.0);\n" \
 	"}\0"
-
 //
 // GLSL generic fragment shader
 //
