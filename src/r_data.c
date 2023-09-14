@@ -1325,7 +1325,8 @@ INT32 R_CreateColormap(char *p1, char *p2, char *p3)
 	extra_colormaps[mapnum].fadeend = (UINT16)fadeend;
 	extra_colormaps[mapnum].fog = fog;
 
-	if (rendermode == render_soft || cv_grpaletteshader.value == 1)
+	// haya: remove this for now
+	// if (rendermode == render_soft || cv_grpaletteshader.value == 1)
 	{
 		double r, g, b, cbrightness;
 		int p;
