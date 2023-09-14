@@ -3505,19 +3505,16 @@ void M_Drawer(void)
 				V_DrawThinString(vid.dupx, vid.height - 20*vid.dupy, V_NOSCALESTART|V_TRANSLUCENT|V_ALLOWLOWERCASE, compbranch);
 				V_DrawThinString(vid.dupx, vid.height - 10*vid.dupy, V_NOSCALESTART|V_TRANSLUCENT|V_ALLOWLOWERCASE, comprevision);
 #else // Regular build
+				V_DrawThinString(vid.dupx, vid.height - 20*vid.dupy, V_NOSCALESTART|V_TRANSLUCENT|V_ALLOWLOWERCASE, va("v%d.%d", VERSION, SUBVERSION));
 				V_DrawThinString(vid.dupx, vid.height - 10*vid.dupy, V_NOSCALESTART|V_TRANSLUCENT|V_ALLOWLOWERCASE, va("%s", VERSIONSTRING));
 #endif
 
 #ifdef HWRENDER
 				if (rendermode == render_opengl)
-				{
-				V_DrawThinString(0, 0, V_GREENMAP|V_SNAPTOTOP|V_SNAPTOLEFT|V_TRANSLUCENT|V_ALLOWLOWERCASE, ("Opengl"));
-				}
+					V_DrawThinString(1, 1, V_GREENMAP|V_SNAPTOTOP|V_SNAPTOLEFT|V_TRANSLUCENT|V_ALLOWLOWERCASE, ("OpenGL"));
 #endif			
 				if (rendermode == render_soft)
-				{
-				V_DrawThinString(0, 0, V_REDMAP|V_SNAPTOTOP|V_SNAPTOLEFT|V_TRANSLUCENT|V_ALLOWLOWERCASE, ("Software"));
-				}
+					V_DrawThinString(1, 1, V_REDMAP|V_SNAPTOTOP|V_SNAPTOLEFT|V_TRANSLUCENT|V_ALLOWLOWERCASE, ("Software"));
 				
 			}
 		}
@@ -11996,10 +11993,10 @@ static void M_LocalSkinChange(INT32 choice)
 
 	switch (itemOn) {
 		case 3:
-			COM_BufAddText(va("localskin -a %s", cv_fakelocalskin.string));
+			COM_BufAddText(va("localskin %s -a", cv_fakelocalskin.string));
 			break;
 		case 4:
-			COM_BufAddText(va("localskin -d %s", cv_fakelocalskin.string));
+			COM_BufAddText(va("localskin %s -d 0", cv_fakelocalskin.string));
 			break;
 		case 5:
 			COM_BufAddText(va("localskin %s", cv_fakelocalskin.string));
