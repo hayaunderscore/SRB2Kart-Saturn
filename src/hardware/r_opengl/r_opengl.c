@@ -35,7 +35,7 @@
 #include "../hw_main.h"
 
 // Eeeeh not sure is this right way, but it works < sry :c 
-//extern consvar_t cv_grusecustomshaders;
+extern consvar_t cv_grusecustomshaders;
 
 extern fixed_t fovtan; // also extremely bad, I'm just too lazy!!!
 
@@ -987,13 +987,14 @@ EXPORT boolean HWRAPI(LoadShaders) (void)
 		gl_shaderprogram_t *shader;
 		const GLchar* vert_shader = vertex_shaders[i];
 		const GLchar* frag_shader = fragment_shaders[i];
-		boolean custom = ((gl_customvertexshaders[i] || gl_customfragmentshaders[i]) && (i > 0));
-
+		boolean custom = cv_grusecustomshaders.value && ((gl_customvertexshaders[i] || gl_customfragmentshaders[i]) && (i > 0));
+		
 		// 18032019
-		if (gl_customvertexshaders[i])
+		if (cv_grusecustomshaders.value && gl_customvertexshaders[i])
 			vert_shader = gl_customvertexshaders[i];
-		if (gl_customfragmentshaders[i])
+		if (cv_grusecustomshaders.value && gl_customfragmentshaders[i])
 			frag_shader = gl_customfragmentshaders[i];
+		
 
 		if (i >= MAXSHADERS)
 			break;
@@ -1114,7 +1115,9 @@ EXPORT boolean HWRAPI(LoadShaders) (void)
 EXPORT void HWRAPI(LoadCustomShader) (int number, char *shader, size_t size, boolean fragment)
 {
 #ifdef GL_SHADERS
-	if (!pglUseProgram) return;
+	if (!pglUseProgram)
+		return;
+	
 	if (number < 1 || number > MAXSHADERS)
 		I_Error("LoadCustomShader(): cannot load shader %d (max %d)", number, MAXSHADERS);
 
@@ -1136,8 +1139,14 @@ EXPORT void HWRAPI(LoadCustomShader) (int number, char *shader, size_t size, boo
 EXPORT void HWRAPI(InitCustomShaders) (void)
 {
 #ifdef GL_SHADERS
+	
 	KillShaders();
 	LoadShaders();
+	
+if (gl_use_palette_shader)
+	{
+	InitPalette();
+	}
 #endif
 }
 
@@ -2160,8 +2169,11 @@ static int comparePolygons(const void *p1, const void *p2)
 	diff = poly1->texNum - poly2->texNum;
 	if (diff != 0) return diff;
 	
+	if (gl_use_palette_shader)
+	{
 	diff = poly1->surf.LightTableId - poly2->surf.LightTableId;
 	if (diff != 0) return diff;
+	}
 
 	diff = poly1->polyFlags - poly2->polyFlags;
 	if (diff != 0) return diff;
@@ -2419,7 +2431,7 @@ EXPORT void HWRAPI(RenderBatches) (precise_t *sSortTime, precise_t *sDrawTime, i
 				changeState = true;
 				changePolyFlags = true;
 			}
-			if (gl_allowshaders)
+			if ((gl_allowshaders) && (gl_use_palette_shader))
 			{
 				if (currentSurfaceInfo.PolyColor.rgba != nextSurfaceInfo.PolyColor.rgba ||
 					currentSurfaceInfo.TintColor.rgba != nextSurfaceInfo.TintColor.rgba ||
@@ -2428,6 +2440,19 @@ EXPORT void HWRAPI(RenderBatches) (precise_t *sSortTime, precise_t *sDrawTime, i
 					currentSurfaceInfo.LightInfo.fade_start != nextSurfaceInfo.LightInfo.fade_start ||
 					currentSurfaceInfo.LightInfo.fade_end != nextSurfaceInfo.LightInfo.fade_end ||
 					currentSurfaceInfo.LightTableId != nextSurfaceInfo.LightTableId)
+				{
+					changeState = true;
+					changeSurfaceInfo = true;
+				}
+			}
+			else if ((gl_allowshaders) && (!gl_use_palette_shader))
+			{
+				if (currentSurfaceInfo.PolyColor.rgba != nextSurfaceInfo.PolyColor.rgba ||
+					currentSurfaceInfo.TintColor.rgba != nextSurfaceInfo.TintColor.rgba ||
+					currentSurfaceInfo.FadeColor.rgba != nextSurfaceInfo.FadeColor.rgba ||
+					currentSurfaceInfo.LightInfo.light_level != nextSurfaceInfo.LightInfo.light_level ||
+					currentSurfaceInfo.LightInfo.fade_start != nextSurfaceInfo.LightInfo.fade_start ||
+					currentSurfaceInfo.LightInfo.fade_end != nextSurfaceInfo.LightInfo.fade_end)
 				{
 					changeState = true;
 					changeSurfaceInfo = true;
