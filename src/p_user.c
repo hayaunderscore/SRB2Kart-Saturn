@@ -1698,6 +1698,10 @@ mobj_t *P_SpawnGhostMobj(mobj_t *mobj)
 	ghost->skin = mobj->skin;
 	ghost->localskin = mobj->localskin;
 	ghost->skinlocal = mobj->skinlocal;
+	ghost->spritexscale = mobj->spritexscale;
+	ghost->spriteyscale = mobj->spriteyscale;
+	ghost->spritexoffset = mobj->spritexoffset;
+	ghost->spriteyoffset = mobj->spriteyoffset;
 
 	if (mobj->flags2 & MF2_OBJECTFLIP)
 		ghost->flags |= MF2_OBJECTFLIP;
