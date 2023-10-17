@@ -1386,11 +1386,11 @@ static menuitem_t OP_OpenGLColorMenu[] =
 
 static menuitem_t OP_SoundOptionsMenu[] =
 {
-	{IT_STRING|IT_CVAR,			NULL, "SFX",					&cv_gamesounds,			 10},
+	{IT_STRING|IT_CVAR|IT_CV_NOPRINT,			NULL, "SFX",					&cv_gamesounds,			 10},
 	{IT_STRING|IT_CVAR|IT_CV_SLIDER,
 								NULL, "SFX Volume",				&cv_soundvolume,		 18},
 
-	{IT_STRING|IT_CVAR,			NULL, "Music",					&cv_gamedigimusic,		 30},
+	{IT_STRING|IT_CVAR|IT_CV_NOPRINT,			NULL, "Music",					&cv_gamedigimusic,		 30},
 	{IT_STRING|IT_CVAR|IT_CV_SLIDER,
 								NULL, "Music Volume",			&cv_digmusicvolume,		 38},
 
@@ -1713,10 +1713,11 @@ static menuitem_t OP_SaturnMenu[] =
 	{IT_STRING | IT_CVAR, NULL, "Skin Select Spinning Speed",		 	&cv_skinselectspin, 	 	35},
 	{IT_STRING | IT_CVAR, NULL, "Input Display outside of RA",		 	&cv_showinput, 	 			45},
 	{IT_STRING | IT_CVAR, NULL, "Small Speedometer",		 			&cv_newspeedometer, 	 	55},
-	{IT_STRING | IT_CVAR, NULL, "Colorized HUD",						&cv_colorizedhud,		 	65},
-	{IT_STRING | IT_CVAR, NULL, "Show Lap Emblem",		 				&cv_showlapemblem, 	 		75},
-	{IT_STRING | IT_CVAR, NULL,	  "Show Minimap Names",   				&cv_showminimapnames, 		85},
-	{IT_STRING | IT_CVAR, NULL,	  "Small Minimap Players",   			&cv_minihead, 				95},
+	{IT_STRING | IT_CVAR, NULL, "Colourized HUD",						&cv_colorizedhud,		 	65},
+	{IT_STRING | IT_CVAR, NULL, "Colourized HUD Color",					&cv_colorizedhudcolor,		75},
+	{IT_STRING | IT_CVAR, NULL, "Show Lap Emblem",		 				&cv_showlapemblem, 	 		85},
+	{IT_STRING | IT_CVAR, NULL,	  "Show Minimap Names",   				&cv_showminimapnames, 		95},
+	{IT_STRING | IT_CVAR, NULL,	  "Small Minimap Players",   			&cv_minihead, 				105},
 	{IT_STRING | IT_CVAR, NULL, "Less Midnight Channel Flicker", 		&cv_lessflicker, 		 	115},
 #ifdef HWRENDER
 	{IT_STRING | IT_CVAR, NULL, "Flashpals in Palette Renderer", 		&cv_grflashpal, 		 	125},
@@ -1733,8 +1734,8 @@ enum
 	sm_waittime,
 	sm_skinselspeed,
 	sm_input,
-	sm_colorhud,
 	sm_speedometer,
+	sm_colorhud,
 	sm_lapemblem,
 	sm_mapnames,
 	sm_smallmap,
@@ -3917,6 +3918,9 @@ void M_Init(void)
 
 	if (!found_extra_kart) // why bother?
 		OP_SaturnMenu[sm_speedometer].status = IT_GRAYEDOUT;
+		
+	if (!found_extra2_kart) // uhguauhauguuhee
+		OP_SaturnMenu[sm_colorhud].status = IT_GRAYEDOUT;
 
 #ifndef NONET
 	CV_RegisterVar(&cv_serversort);
@@ -5710,7 +5714,7 @@ static void M_HandleAddons(INT32 choice)
 #endif
 						case EXT_PK3:
 							if (browselocalskins) {
-							if (DumbStartsWith("KC_", dirmenu[dir_on[menudepthleft]]+DIR_STRING)) {
+							if (DumbStartsWith("KC_", dirmenu[dir_on[menudepthleft]]+DIR_STRING) || DumbStartsWith("kc_", dirmenu[dir_on[menudepthleft]]+DIR_STRING)) {
 									M_StartMessage(va("%c%s\x80\nYou are loading a local skin.\nLocal skins will not be usable\nafter going back from\nthe title screen.\n\n(Press a key)\n", ('\x80' + (highlightflags>>V_CHARCOLORSHIFT)), dirmenu[dir_on[menudepthleft]]+DIR_STRING),NULL,MM_NOTHING);
 									COM_BufAddText(va("addskins \"%s%s\"", menupath, dirmenu[dir_on[menudepthleft]]+DIR_STRING));
 								}
