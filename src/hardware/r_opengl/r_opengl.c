@@ -79,8 +79,9 @@ static  GLuint      tex_downloaded  = 0;
 static  GLfloat     fov             = 90.0f;
 static  FBITFIELD   CurrentPolyFlags;
 
-static  FTextureInfo *gr_cachetail = NULL;
-static  FTextureInfo *gr_cachehead = NULL;
+// Linked list of all textures.
+static FTextureInfo *TexCacheTail = NULL;
+static FTextureInfo *TexCacheHead = NULL;
 
 typedef struct LightTableCacheEntry_s
 {
@@ -246,6 +247,33 @@ static void GL_MSG_Error(const char *format, ...)
 		gllogstream = fopen("ogllog.txt", "w");
 	fwrite(str, strlen(str), 1, gllogstream);
 #endif
+}
+
+
+// ----------------------+
+// GetTextureFormatName  : Returns the corresponding texture format string from the texture format enumeration.
+// ----------------------+
+static const char *GetTextureFormatName(INT32 format)
+{
+	static char num[12];
+
+	switch (format)
+	{
+		case GR_TEXFMT_P_8:                return "GR_TEXFMT_P_8";
+		case GR_TEXFMT_AP_88:              return "GR_TEXFMT_AP_88";
+		case GR_RGBA:               	   return "GR_RGBA";
+		case GR_TEXFMT_ALPHA_8:            return "GR_TEXFMT_ALPHA_8";
+		case GR_TEXFMT_INTENSITY_8:        return "GR_TEXFMT_INTENSITY_8";
+		case GR_TEXFMT_ALPHA_INTENSITY_88: return "GR_TEXFMT_ALPHA_INTENSITY_88";
+		default:                           break;
+	}
+
+	// If the texture format is not known (due to it being invalid),
+	// return a string containing the format index instead.
+	format = INT32_MIN;
+	snprintf(num, sizeof(num), "%d", format);
+
+	return num;
 }
 
 
@@ -1514,6 +1542,39 @@ void SetStates(void)
 	pglEnable(GL_STENCIL_TEST);
 }
 
+
+// -----------------+
+// DeleteTexture    : Deletes a texture from the GPU and frees its data
+// -----------------+
+EXPORT void HWRAPI(DeleteTexture) (GLMipmap_t *pTexInfo)
+{
+	FTextureInfo *head = TexCacheHead;
+
+	if (!pTexInfo)
+		return;
+	else if (pTexInfo->downloaded)
+		pglDeleteTextures(1, (GLuint *)&pTexInfo->downloaded);
+
+	while (head)
+	{
+		if (head->downloaded == pTexInfo->downloaded)
+		{
+			if (head->next)
+				head->next->prev = head->prev;
+			if (head->prev)
+				head->prev->next = head->next;
+			free(head);
+			break;
+		}
+
+		head = head->next;
+	}
+
+	pTexInfo->downloaded = 0;
+}
+
+
+
 // -----------------+
 // Flush            : flush OpenGL textures
 //                  : Clear list of downloaded mipmaps
@@ -1522,19 +1583,28 @@ void Flush(void)
 {
 	//GL_DBG_Printf("HWR_Flush()\n");
 
-	while (gr_cachehead)
+	while (TexCacheHead)
 	{
-		// this is not necessary at all, because you have loaded them normally,
-		// and so they already are in your list!
-		if (gr_cachehead->downloaded)
-			pglDeleteTextures(1, (GLuint *)&gr_cachehead->downloaded);
-		gr_cachehead->downloaded = 0;
-		gr_cachehead = gr_cachehead->nextmipmap;
-	}
-	gr_cachetail = gr_cachehead = NULL; //Hurdler: well, gr_cachehead is already NULL
+		FTextureInfo *pTexInfo = TexCacheHead;
+		GLMipmap_t *texture = pTexInfo->texture;
 
+		if (pTexInfo->downloaded)
+		{
+			pglDeleteTextures(1, (GLuint *)&pTexInfo->downloaded);
+			pTexInfo->downloaded = 0;
+		}
+	
+		if (texture)
+			texture->downloaded = 0;
+
+		TexCacheHead = pTexInfo->next;
+		free(pTexInfo);
+	}
+
+	TexCacheTail = TexCacheHead = NULL; //Hurdler: well, TexCacheHead is already NULL
 	tex_downloaded = 0;
 }
+
 
 
 // -----------------+
@@ -1925,39 +1995,60 @@ EXPORT void HWRAPI(SetBlend) (FBITFIELD PolyFlags)
 	CurrentPolyFlags = PolyFlags;
 }
 
-
-// -----------------+
-// UpdateTexture    : Updates the texture data.
-// -----------------+
-EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
+// -------------------+
+// AllocTextureBuffer : Allocates memory for converting a non-RGBA texture into an RGBA texture.
+// -------------------+
+static RGBA_t *AllocTextureBuffer(GLMipmap_t *pTexInfo)
 {
-	// Download a mipmap
-	boolean updatemipmap = true;
-	static RGBA_t   tex[2048*2048];
-	const GLvoid   *ptex = tex;
-	INT32             w, h;
-	GLuint texnum = 0;
+	size_t len = (pTexInfo->width * pTexInfo->height);
+	RGBA_t *tex = calloc(len, sizeof(RGBA_t));
 
-	if (!pTexInfo->downloaded)
+	if (tex == NULL)
+		I_Error("AllocTextureBuffer: out of memory allocating %s bytes for texture %d, format %s",
+		sizeu1(len * sizeof(RGBA_t)), pTexInfo->downloaded, GetTextureFormatName(pTexInfo->grInfo.format));
+
+	return tex;
+}
+
+// ------------------+
+// FreeTextureBuffer : Frees memory allocated by AllocTextureBuffer.
+// ------------------+
+static void FreeTextureBuffer(RGBA_t *tex)
+{
+	if (tex)
+		free(tex);
+}
+
+// -----------------+
+// UpdateTexture    : Updates texture data.
+// -----------------+
+EXPORT void HWRAPI(UpdateTexture) (GLMipmap_t *pTexInfo)
+{
+	// Upload a texture
+	GLuint num = pTexInfo->downloaded;
+	boolean update = true;
+
+	INT32 w = pTexInfo->width, h = pTexInfo->height;
+	INT32 i, j;
+
+	const GLubyte *pImgData = (const GLubyte *)pTexInfo->grInfo.data;
+	const GLvoid *ptex = NULL;
+	RGBA_t *tex = NULL;
+
+	// Generate a new texture name.
+	if (!num)
 	{
-		pglGenTextures(1, &texnum);
-		pTexInfo->downloaded = texnum;
-		updatemipmap = false;
+		pglGenTextures(1, &num);
+		pTexInfo->downloaded = num;
+		update = false;
 	}
-	else
-		texnum = pTexInfo->downloaded;
-
-	//GL_DBG_Printf ("DownloadMipmap %d %x\n",(INT32)texnum,pTexInfo->grInfo.data);
-
-	w = pTexInfo->width;
-	h = pTexInfo->height;
+	
+	//GL_DBG_Printf("UpdateTexture %d %x\n", (INT32)num, pImgData);
 
 
-	if ((pTexInfo->grInfo.format == GR_TEXFMT_P_8) ||
-		(pTexInfo->grInfo.format == GR_TEXFMT_AP_88))
+	if ((pTexInfo->grInfo.format == GR_TEXFMT_P_8) || (pTexInfo->grInfo.format == GR_TEXFMT_AP_88))
 	{
-		const GLubyte *pImgData = (const GLubyte *)pTexInfo->grInfo.data;
-		INT32 i, j;
+		ptex = tex = AllocTextureBuffer(pTexInfo);
 
 		for (j = 0; j < h; j++)
 		{
@@ -1994,14 +2085,12 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 	}
 	else if (pTexInfo->grInfo.format == GR_RGBA)
 	{
-		// corona test : passed as ARGB 8888, which is not in glide formats
-		// Hurdler: not used for coronas anymore, just for dynamic lighting
-		ptex = pTexInfo->grInfo.data;
+		// Directly upload the texture data without any kind of conversion.
+		ptex = pImgData;
 	}
 	else if (pTexInfo->grInfo.format == GR_TEXFMT_ALPHA_INTENSITY_88)
 	{
-		const GLubyte *pImgData = (const GLubyte *)pTexInfo->grInfo.data;
-		INT32 i, j;
+		ptex = tex = AllocTextureBuffer(pTexInfo);
 
 		for (j = 0; j < h; j++)
 		{
@@ -2018,8 +2107,7 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 	}
 	else if (pTexInfo->grInfo.format == GR_TEXFMT_ALPHA_8) // Used for fade masks
 	{
-		const GLubyte *pImgData = (const GLubyte *)pTexInfo->grInfo.data;
-		INT32 i, j;
+		ptex = tex = AllocTextureBuffer(pTexInfo);
 
 		for (j = 0; j < h; j++)
 		{
@@ -2034,12 +2122,10 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 		}
 	}
 	else
-		GL_MSG_Warning ("SetTexture(bad format) %ld\n", pTexInfo->grInfo.format);
+		GL_MSG_Warning("UpdateTexture: bad format %d\n", pTexInfo->grInfo.format);
 
-
-	// the texture number was already generated by pglGenTextures
-	pglBindTexture(GL_TEXTURE_2D, texnum);
-	tex_downloaded = texnum;
+	pglBindTexture(GL_TEXTURE_2D, num);
+	tex_downloaded = num;
 
 	// disable texture filtering on any texture that has holes so there's no dumb borders or blending issues
 	if (pTexInfo->flags & TF_TRANSPARENT)
@@ -2068,7 +2154,7 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 		}
 		else
 		{
-			if (updatemipmap)
+			if (update)
 				pglTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
 			else
 				pglTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
@@ -2089,7 +2175,7 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 		}
 		else
 		{
-			if (updatemipmap)
+			if (update)
 				pglTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
 			else
 				pglTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
@@ -2109,12 +2195,15 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 		}
 		else
 		{
-			if (updatemipmap)
+			if (update)
 				pglTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
 			else
 				pglTexImage2D(GL_TEXTURE_2D, 0, textureformatGL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
 		}
 	}
+	
+	// Free the texture buffer
+	FreeTextureBuffer(tex);
 
 	if (pTexInfo->flags & TF_WRAPX)
 		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -2134,7 +2223,7 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 // -----------------+
 // SetTexture       : The mipmap becomes the current texture source
 // -----------------+
-EXPORT void HWRAPI(SetTexture) (FTextureInfo *pTexInfo)
+EXPORT void HWRAPI(SetTexture) (GLMipmap_t *pTexInfo)
 {
 	if (!pTexInfo)
 	{
@@ -2151,15 +2240,25 @@ EXPORT void HWRAPI(SetTexture) (FTextureInfo *pTexInfo)
 	}
 	else
 	{
+		FTextureInfo *newTex = calloc(1, sizeof (*newTex));
+		
 		UpdateTexture(pTexInfo);
-		pTexInfo->nextmipmap = NULL;
-		if (gr_cachetail)
-		{ // insertion at the tail
-			gr_cachetail->nextmipmap = pTexInfo;
-			gr_cachetail = pTexInfo;
+		newTex->texture = pTexInfo;
+		newTex->downloaded = (UINT32)pTexInfo->downloaded;
+		newTex->width = (UINT32)pTexInfo->width;
+		newTex->height = (UINT32)pTexInfo->height;
+		newTex->format = (UINT32)pTexInfo->grInfo.format;;
+
+		// insertion at the tail
+		if (TexCacheTail)
+		{ 
+			newTex->prev = TexCacheTail;
+			TexCacheTail->next = newTex;
+			TexCacheTail = newTex;
+
 		}
 		else // initialization of the linked list
-			gr_cachetail = gr_cachehead =  pTexInfo;
+			TexCacheTail = TexCacheHead = newTex;
 	}
 }
 
@@ -3820,7 +3919,7 @@ EXPORT void HWRAPI(SetTransform) (FTransform *stransform)
 
 EXPORT INT32  HWRAPI(GetTextureUsed) (void)
 {
-	FTextureInfo *tmp = gr_cachehead;
+	FTextureInfo *tmp = TexCacheHead;
 	INT32 res = 0;
 
 	while (tmp)
@@ -3829,7 +3928,7 @@ EXPORT INT32  HWRAPI(GetTextureUsed) (void)
 		// I don't know which one the game actually _uses_ but this
 		// follows format2bpp in hw_cache.c
 		int bpp = 1;
-		int format = tmp->grInfo.format;
+		int format = tmp->format;
 		if (format == GR_RGBA)
 			bpp = 4;
 		else if (format == GR_TEXFMT_RGB_565
@@ -3841,7 +3940,7 @@ EXPORT INT32  HWRAPI(GetTextureUsed) (void)
 
 		// Add it up!
 		res += tmp->height*tmp->width*bpp;
-		tmp = tmp->nextmipmap;
+		tmp = tmp->next;
 	}
 	
 	return res;
