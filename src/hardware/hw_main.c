@@ -150,6 +150,7 @@ consvar_t cv_grfallbackplayermodel = {"gr_fallbackplayermodel", "Off", CV_SAVE, 
 consvar_t cv_grshearing = {"gr_shearing", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 consvar_t cv_grspritebillboarding = {"gr_spritebillboarding", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 consvar_t cv_grfakecontrast = {"gr_fakecontrast", "Standard", CV_SAVE, grfakecontrast_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL};
+consvar_t cv_grslopecontrast = {"gr_slopecontrast", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 
 static void CV_filtermode_ONChange(void)
 {
@@ -615,6 +616,50 @@ static FUINT HWR_CalcWallLight(FUINT lightnum, fixed_t v1x, fixed_t v1y, fixed_t
 	return (FUINT)finallight;
 }
 
+static FUINT HWR_CalcSlopeLight(FUINT lightnum, angle_t dir, fixed_t delta)
+{
+	INT16 finallight = lightnum;
+
+	if (cv_grfakecontrast.value != 0 && cv_grslopecontrast.value != 0)
+	{
+		const UINT8 contrast = 8;
+		fixed_t extralight = 0;
+
+		if (cv_grfakecontrast.value == 2) // Smooth setting
+		{
+			fixed_t dirmul = abs(FixedDiv(AngleFixed(dir) - (180<<FRACBITS), 180<<FRACBITS));
+
+			extralight = -(contrast<<FRACBITS) + (dirmul * (contrast * 2));
+
+			extralight = FixedMul(extralight, delta*4) >> FRACBITS;
+		}
+		else
+		{
+			dir = ((dir + ANGLE_45) / ANGLE_90) * ANGLE_90;
+
+			if (dir == ANGLE_180)
+				extralight = -contrast;
+			else if (dir == 0)
+				extralight = contrast;
+
+			if (delta >= FRACUNIT/2)
+				extralight *= 2;
+		}
+
+		if (extralight != 0)
+		{
+			finallight += extralight;
+
+			if (finallight < 0)
+				finallight = 0;
+			if (finallight > 255)
+				finallight = 255;
+		}
+	}
+
+	return (FUINT)finallight;
+}
+
 // ==========================================================================
 // Floor and ceiling generation from subsectors
 // ==========================================================================
@@ -801,6 +846,11 @@ void HWR_RenderPlane(extrasubsector_t *xsub, boolean isceiling, fixed_t fixedhei
 	for (i = 0, v3d = planeVerts; i < nrPlaneVerts; i++,v3d++,pv++)
 		SETUP3DVERT(v3d, pv->x, pv->y);
 
+#ifdef ESLOPE
+	if (slope)
+		lightlevel = HWR_CalcSlopeLight(lightlevel, R_PointToAngle2(0, 0, slope->normal.x, slope->normal.y), abs(slope->zdelta));
+#endif
+
 	HWR_Lighting(&Surf, lightlevel, planecolormap);
 
 	if (PolyFlags & (PF_Translucent|PF_Fog))
@@ -811,12 +861,17 @@ void HWR_RenderPlane(extrasubsector_t *xsub, boolean isceiling, fixed_t fixedhei
 	else
 		PolyFlags |= PF_Masked|PF_Modulated;
 
-	if (PolyFlags & PF_Fog)
-		HWD.pfnSetShader(6);	// fog shader
-	else if (PolyFlags & PF_Ripple)
-		HWD.pfnSetShader(5);	// water shader
-	else
-		HWD.pfnSetShader(gr_use_palette_shader ? 9 : 1);	// floor shader
+	if (cv_grshaders.value && gr_shadersavailable)
+	{	
+		if (PolyFlags & PF_Fog)
+			HWD.pfnSetShader(6);	// fog shader
+		else if (PolyFlags & PF_Ripple)
+			HWD.pfnSetShader(5);	// water shader
+		else
+			HWD.pfnSetShader(gr_use_palette_shader ? 9 : 1);	// floor shader
+		
+		PolyFlags |= PF_ColorMapped;
+	}
 
 	HWD.pfnDrawPolygon(&Surf, planeVerts, nrPlaneVerts, PolyFlags, false);
 
@@ -970,7 +1025,11 @@ static void HWR_DrawSegsSplats(FSurfaceInfo * pSurf)
 				break;
 		}
 
-		HWD.pfnSetShader(gr_use_palette_shader ? 10 : 2);	// wall shader
+		if (cv_grshaders.value && gr_shadersavailable)
+		{
+			HWD.pfnSetShader(gr_use_palette_shader ? 10 : 2);	// wall shader
+		}
+		
 		HWD.pfnDrawPolygon(&pSurf, wallVerts, 4, i|PF_Modulated|PF_Decal, false);
 	}
 }
@@ -1004,7 +1063,11 @@ void HWR_ProjectWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend
 {
 	HWR_Lighting(pSurf, lightlevel, wallcolormap);
 
-	HWD.pfnSetShader(gr_use_palette_shader ? 10 : 2);	// wall shader
+	if (cv_grshaders.value && gr_shadersavailable)
+	{
+		HWD.pfnSetShader(gr_use_palette_shader ? 10 : 2);	// wall shader
+		blendmode |= PF_ColorMapped;
+	}
 
 	// don't draw to color buffer when drawing to stencil
 	if (gl_drawing_stencil)
@@ -2213,7 +2276,7 @@ void HWR_ProcessSeg(void) // Sort of like GLWall::Process in GZDoom
 
 				if (rover->master->flags & ML_TFERLINE)
 				{
-					size_t linenum = gr_curline->linedef-gr_backsector->lines[0];
+					size_t linenum = min(gr_curline->linedef-gr_backsector->lines[0], rover->master->frontsector->linecount);
 					newline = rover->master->frontsector->lines[0] + linenum;
 					texnum = R_GetTextureNum(sides[newline->sidenum[0]].midtexture);
 				}
@@ -2385,7 +2448,7 @@ void HWR_ProcessSeg(void) // Sort of like GLWall::Process in GZDoom
 
 				if (rover->master->flags & ML_TFERLINE)
 				{
-					size_t linenum = gr_curline->linedef-gr_backsector->lines[0];
+					size_t linenum = min(gr_curline->linedef-gr_backsector->lines[0], rover->master->frontsector->linecount);
 					newline = rover->master->frontsector->lines[0] + linenum;
 					texnum = R_GetTextureNum(sides[newline->sidenum[0]].midtexture);
 				}
@@ -3201,7 +3264,12 @@ void HWR_RenderPolyObjectPlane(polyobj_t *polysector, boolean isceiling, fixed_t
 	else
 		blendmode |= PF_Masked|PF_Modulated;
 
-	HWD.pfnSetShader(gr_use_palette_shader ? 9 : 1);	// floor shader
+	if (cv_grshaders.value && gr_shadersavailable)
+	{		
+		HWD.pfnSetShader(gr_use_palette_shader ? 9 : 1);	// floor shader
+		blendmode |= PF_ColorMapped;
+	}
+		
 	HWD.pfnDrawPolygon(&Surf, planeVerts, nrPlaneVerts, blendmode, false);
 }
 
@@ -4012,7 +4080,12 @@ static void HWR_DrawSpriteShadow(gr_vissprite_t *spr, GLPatch_t *gpatch, float t
 	if (sSurf.PolyColor.s.alpha > floorheight/4)
 	{
 		sSurf.PolyColor.s.alpha = (UINT8)(sSurf.PolyColor.s.alpha - floorheight/4);
-		HWD.pfnSetShader(gr_use_palette_shader ? 9 : 1);	// floor shader
+		
+		if (cv_grshaders.value && gr_shadersavailable)
+		{
+			HWD.pfnSetShader(gr_use_palette_shader ? 9 : 1);	// floor shader
+		}
+		
 		HWD.pfnDrawPolygon(&sSurf, swallVerts, 4, PF_Translucent|PF_Modulated, false);
 	}
 }
@@ -4223,6 +4296,7 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 	}
 
 	alpha = Surf.PolyColor.s.alpha;
+	
 
 	// Start with the lightlevel and colormap from the top of the sprite
 	lightlevel = *list[sector->numlights - 1].lightlevel;
@@ -4378,8 +4452,13 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 		HWR_Lighting(&Surf, lightlevel, colormap);
 
 		Surf.PolyColor.s.alpha = alpha;
-
-		HWD.pfnSetShader(gr_use_palette_shader ? 10 : 3);	// sprite shader
+		
+		if (cv_grshaders.value && gr_shadersavailable)
+		{
+			HWD.pfnSetShader(gr_use_palette_shader ? 10 : 3);	// sprite shader
+			blend |= PF_ColorMapped;
+		}
+			
 		HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 
 		top = bot;
@@ -4419,7 +4498,12 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 
 	Surf.PolyColor.s.alpha = alpha;
 
-	HWD.pfnSetShader(gr_use_palette_shader ? 10 : 3);	// sprite shader
+	if (cv_grshaders.value && gr_shadersavailable)
+	{
+		HWD.pfnSetShader(gr_use_palette_shader ? 10 : 3);	// sprite shader
+		blend |= PF_ColorMapped;
+	}
+		
 	HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 }
 
@@ -4572,7 +4656,12 @@ static void HWR_DrawSprite(gr_vissprite_t *spr)
 			blend = PF_Translucent|PF_Occlude;
 		}
 
-		HWD.pfnSetShader(gr_use_palette_shader ? 10 : 3);	// sprite shader
+		if (cv_grshaders.value && gr_shadersavailable)
+		{
+			HWD.pfnSetShader(gr_use_palette_shader ? 10 : 3);	// sprite shader
+			blend |= PF_ColorMapped;
+		}
+		
 		HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 	}
 }
@@ -4666,7 +4755,12 @@ static inline void HWR_DrawPrecipitationSprite(gr_vissprite_t *spr)
 		blend = PF_Translucent|PF_Occlude;
 	}
 
-	HWD.pfnSetShader(gr_use_palette_shader ? 10 : 3);	// sprite shader
+	if (cv_grshaders.value && gr_shadersavailable)
+	{
+		HWD.pfnSetShader(gr_use_palette_shader ? 10 : 3);	// sprite shader
+		blend |= PF_ColorMapped;
+	}
+		
 	HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 }
 
@@ -6217,6 +6311,7 @@ void HWR_AddCommands(void)
 	CV_RegisterVar(&cv_grgammagreen);
 	CV_RegisterVar(&cv_grgammared);
 	CV_RegisterVar(&cv_grfakecontrast);
+	CV_RegisterVar(&cv_grslopecontrast);
 	
 	CV_RegisterVar(&cv_grfovchange);
 	
@@ -6308,7 +6403,14 @@ void HWR_RenderWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend,
 	blendmode |= PF_Modulated;	// No PF_Occlude means overlapping (incorrect) transparency
 
 	if (!fogwall)
-		HWD.pfnSetShader(gr_use_palette_shader ? 10 : 2);	// wall shader
+	{
+		if (cv_grshaders.value && gr_shadersavailable)
+		{
+			HWD.pfnSetShader(gr_use_palette_shader ? 10 : 2);	// wall shader
+			blendmode |= PF_ColorMapped;
+		}
+	}
+	
 	HWD.pfnDrawPolygon(pSurf, wallVerts, 4, blendmode, false);
 
 #ifdef WALLSPLATS
@@ -6340,7 +6442,7 @@ void HWR_DoPostProcessor(player_t *player)
 
 	// Armageddon Blast Flash!
 	// Could this even be considered postprocessor?
-	if ((player->flashcount && !cv_grpaletteshader.value) || (player->flashcount && cv_grpaletteshader.value && !cv_grflashpal.value))
+	if ((player->flashcount) && !(cv_grshaders.value && cv_grpaletteshader.value && cv_grflashpal.value))
 	{
 		FOutVector      v[4];
 		FSurfaceInfo Surf;
