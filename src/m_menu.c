@@ -1363,7 +1363,6 @@ static const char* OP_VideoTooltips[] =
 #ifdef HWRENDER
 	"Options for OpenGL renderer.",
 #endif
-	"Experimental graphical options.",
 };
 
 
@@ -1803,7 +1802,7 @@ static const char* OP_AdvServerOptionsTooltips[] =
 	"Delay timeout in seconds.",
 	"Connection timeout in tics.",
 	"Join timeout in tics",
-	"Max file size sent in killobytes.",
+	"Max file size sent in kilobytes.",
 	"Packet rate for file transfers.",
 	"Log ip addresses of players who join.",
 	"Log player resync attempts.",
@@ -1909,9 +1908,9 @@ static const char* OP_SaturnTooltips[] =
 	"Displays the input display outside of Record Attack. Also adjusts the\nposition scale to match.",
 	"Change what style the speedometer is.",
 	"Enable the stat display.",
-	"Enable colorized hud.",
-	"Enable the colorized itembox when colorized hud is enabled.",
-	"The color to use instead of the player color when colorized hud is enabled.",
+	"Enable colourized hud.",
+	"Enable the colourized itembox when colourized hud is enabled.",
+	"The colour to use instead of the player colour when colourized hud is enabled.",
 	"Show the big 'LAP' text on a lap change.",
 	"Show player names on the minimap.",
 	"Minimize the player icons on the minimap.",
@@ -1931,6 +1930,7 @@ enum
 	sm_speedometer,
 	sm_statdisplay,
 	sm_colorhud,
+	sm_coloritem,
 	sm_colorhud_customcolor,
 	sm_lapemblem,
 	sm_mapnames,
@@ -2085,15 +2085,14 @@ static const char* OP_BirdTooltips[] =
 	NULL,
 	"Show player names in replay playback.",
 	"Show FREE PLAY text when in a empty server.",
-	NULL,
-	"Only show one battle choice in map vote",
-	"Amount of encore choices in map vote.",
+	//NULL,
+	//"Only show one battle choice in map vote",
+	//"Amount of encore choices in map vote.",
 	NULL,
 	"Resume level music from last position after music change.",
 	"Restart Special music if item is used again.",
 	
 	"Options for advanced music settings.",
-	
 };
 
 static menuitem_t OP_ForkedBirdMenu[] =
@@ -3025,6 +3024,24 @@ void Bird_menu_Onchange(void)
 	OP_AdvancedBirdMenu[fadegrow].status = status;
 	OP_AdvancedBirdMenu[respawnfadeout].status = status;
 	OP_AdvancedBirdMenu[respawnfadein].status = status;
+}
+
+//menu code is nice
+void Saturn_menu_Onchange(void) 
+{
+	UINT16 status;
+
+	if (cv_colorizedhud.value)
+	{
+			status = IT_STRING | IT_CVAR;
+	}
+	else
+	{
+			status = IT_GRAYEDOUT;
+	}
+	
+	OP_SaturnMenu[sm_coloritem].status = status;
+	OP_SaturnMenu[sm_colorhud_customcolor].status = status;
 }
 
 // ==========================================================================

@@ -1089,12 +1089,10 @@ void HWR_ProjectWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend
 //
 // HWR_SplitWall
 //
-void HWR_SplitWall(sector_t *sector, FOutVector *wallVerts, INT32 texnum, FSurfaceInfo* Surf, INT32 cutflag, ffloor_t *pfloor, FBITFIELD polyflags)
+// SoM: split up and light walls according to the lightlist.
+// This may also include leaving out parts of the wall that can't be seen
+static void HWR_SplitWall(sector_t *sector, FOutVector *wallVerts, INT32 texnum, FSurfaceInfo* Surf, INT32 cutflag, ffloor_t *pfloor, FBITFIELD polyflags)
 {
-	/* SoM: split up and light walls according to the
-	 lightlist. This may also include leaving out parts
-	 of the wall that can't be seen */
-
 	float realtop, realbot, top, bot;
 	float pegt, pegb, pegmul;
 	float height = 0.0f, bheight = 0.0f;
@@ -1103,49 +1101,50 @@ void HWR_SplitWall(sector_t *sector, FOutVector *wallVerts, INT32 texnum, FSurfa
 	float endrealtop, endrealbot, endtop, endbot;
 	float endpegt, endpegb, endpegmul;
 	float endheight = 0.0f, endbheight = 0.0f;
+	
+	float diff;
 
-	fixed_t v1x = FLOAT_TO_FIXED(wallVerts[0].x);
-	fixed_t v1y = FLOAT_TO_FIXED(wallVerts[0].z); // not a typo
-	fixed_t v2x = FLOAT_TO_FIXED(wallVerts[1].x);
-	fixed_t v2y = FLOAT_TO_FIXED(wallVerts[1].z); // not a typo
-	// compiler complains when P_GetZAt is used in FLOAT_TO_FIXED directly
-	// use this as a temp var to store P_GetZAt's return value each time
-	fixed_t temp;
+	fixed_t v1x = FloatToFixed(wallVerts[0].x);
+	fixed_t v1y = FloatToFixed(wallVerts[0].z);
+	fixed_t v2x = FloatToFixed(wallVerts[1].x);
+	fixed_t v2y = FloatToFixed(wallVerts[1].z);
 #endif
 
-	INT32   solid, i;
-	lightlist_t *  list = sector->lightlist;
 	const UINT8 alpha = Surf->PolyColor.s.alpha;
 	FUINT lightnum = HWR_CalcWallLight(sector->lightlevel, v1x, v1y, v2x, v2y);
 	extracolormap_t *colormap = NULL;
 
 	realtop = top = wallVerts[3].y;
 	realbot = bot = wallVerts[0].y;
+	diff = top - bot;
+	
 	pegt = wallVerts[3].t;
 	pegb = wallVerts[0].t;
-	pegmul = (pegb - pegt) / (top - bot);
 
-	if (fpclassify(pegmul) == FP_NAN)
+	// Lactozilla: If both heights of a side lay on the same position, then this wall is a triangle.
+	// To avoid division by zero, which would result in a NaN, we check if the vertical difference
+	// between the two vertices is not zero.
+	if (fpclassify(diff) == FP_ZERO)
 		pegmul = 0.0;
+	else
+		pegmul = (pegb - pegt) / diff;
+
 
 #ifdef ESLOPE
 	endrealtop = endtop = wallVerts[2].y;
-	endrealbot = endbot = wallVerts[1].y;
+	endrealbot = endbot = wallVerts[1].y;	
 	endpegt = wallVerts[2].t;
 	endpegb = wallVerts[1].t;
 	endpegmul = (endpegb - endpegt) / (endtop - endbot);
 #endif
 
-	if (fpclassify(endpegmul) == FP_NAN)
-		endpegmul = 0.0;
 
-	for (i = 0; i < sector->numlights; i++)
+	for (INT32 i = 0; i < sector->numlights; i++)
 	{
-#ifdef ESLOPE
-		if (endtop < endrealbot)
-#endif
-		if (top < realbot)
+		if (endtop < endrealbot && top < realbot)
 			return;
+		
+		lightlist_t *list = sector->lightlist;
 
 		if (!(list[i].flags & FF_NOSHADE))
 		{
@@ -1163,7 +1162,7 @@ void HWR_SplitWall(sector_t *sector, FOutVector *wallVerts, INT32 texnum, FSurfa
 			}
 		}
 
-		solid = false;
+		boolean solid = false;
 
 		if ((sector->lightlist[i].flags & FF_CUTSOLIDS) && !(cutflag & FF_EXTRA))
 			solid = true;
@@ -1182,11 +1181,9 @@ void HWR_SplitWall(sector_t *sector, FOutVector *wallVerts, INT32 texnum, FSurfa
 
 #ifdef ESLOPE
 		if (list[i].slope)
-		{
-			temp = P_GetZAt(list[i].slope, v1x, v1y);
-			height = FIXED_TO_FLOAT(temp);
-			temp = P_GetZAt(list[i].slope, v2x, v2y);
-			endheight = FIXED_TO_FLOAT(temp);
+		{		
+			height = FixedToFloat(P_GetZAt(list[i].slope, v1x, v1y));
+			endheight = FixedToFloat(P_GetZAt(list[i].slope, v2x, v2y));		
 		}
 		else
 			height = endheight = FIXED_TO_FLOAT(list[i].height);
@@ -1194,10 +1191,8 @@ void HWR_SplitWall(sector_t *sector, FOutVector *wallVerts, INT32 texnum, FSurfa
 		{
 			if (*list[i].caster->b_slope)
 			{
-				temp = P_GetZAt(*list[i].caster->b_slope, v1x, v1y);
-				bheight = FIXED_TO_FLOAT(temp);
-				temp = P_GetZAt(*list[i].caster->b_slope, v2x, v2y);
-				endbheight = FIXED_TO_FLOAT(temp);
+				bheight = FixedToFloat(P_GetZAt(*list[i].caster->b_slope, v1x, v1y));
+				endbheight = FixedToFloat(P_GetZAt(*list[i].caster->b_slope, v2x, v2y));
 			}
 			else
 				bheight = endbheight = FIXED_TO_FLOAT(*list[i].caster->bottomheight);
@@ -1226,10 +1221,8 @@ void HWR_SplitWall(sector_t *sector, FOutVector *wallVerts, INT32 texnum, FSurfa
 		{
 			if (list[i+1].slope)
 			{
-				temp = P_GetZAt(list[i+1].slope, v1x, v1y);
-				bheight = FIXED_TO_FLOAT(temp);
-				temp = P_GetZAt(list[i+1].slope, v2x, v2y);
-				endbheight = FIXED_TO_FLOAT(temp);
+				bheight = FixedToFloat(P_GetZAt(list[i+1].slope, v1x, v1y));
+				endbheight = FixedToFloat(P_GetZAt(list[i+1].slope, v2x, v2y));
 			}
 			else
 				bheight = endbheight = FIXED_TO_FLOAT(list[i+1].height);
@@ -2436,7 +2429,6 @@ void HWR_ProcessSeg(void) // Sort of like GLWall::Process in GZDoom
 					lightnum = rover->master->frontsector->lightlevel;
 					lightnum = colormap ? lightnum : HWR_CalcWallLight(lightnum, vs.x, vs.y, ve.x, ve.y);
 
-
 					Surf.PolyColor.s.alpha = HWR_FogBlockAlpha(rover->master->frontsector->lightlevel, rover->master->frontsector->extra_colormap);
 
 					if (gr_frontsector->numlights)
@@ -2815,8 +2807,8 @@ void HWR_AddLine(seg_t *line)
 	}
 
 	// OPTIMIZE: quickly reject orthogonal back sides.
-	angle1 = R_PointToAngle64(v1x, v1y);
-	angle2 = R_PointToAngle64(v2x, v2y);
+	angle1 = R_PointToAngleEx64(viewx, viewy, v1x, v1y);
+	angle2 = R_PointToAngleEx64(viewx, viewy, v2x, v2y);
 
 	// do an extra culling check when rendering portals
 	// check if any line vertex is on the viewable side of the portal target line
@@ -3111,8 +3103,8 @@ boolean HWR_CheckBBox(fixed_t *bspcoord)
 		if (mindist > current_bsp_culling_distance) return false;
 	}
 
-	angle1 = R_PointToAngle64(px1, py1);
-	angle2 = R_PointToAngle64(px2, py2);
+	angle1 = R_PointToAngleEx64(viewx, viewy, px1, py1);
+	angle2 = R_PointToAngleEx64(viewx, viewy, px2, py2);
 	return gld_clipper_SafeCheckRange(angle2, angle1);
 }
 
@@ -5965,8 +5957,8 @@ void HWR_PortalClipping(portal_t *portal)
 
 	line_t *line = &lines[portal->clipline];
 
-	angle1 = R_PointToAngleEx(viewx, viewy, line->v1->x, line->v1->y);
-	angle2 = R_PointToAngleEx(viewx, viewy, line->v2->x, line->v2->y);
+	angle1 = R_PointToAngleEx64(viewx, viewy, line->v1->x, line->v1->y);
+	angle2 = R_PointToAngleEx64(viewx, viewy, line->v2->x, line->v2->y);
 
 	// clip things that are not inside the portal window from our viewpoint
 	gld_clipper_SafeAddClipRange(angle2, angle1);

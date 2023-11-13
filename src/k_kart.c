@@ -8,6 +8,7 @@
 #include "hu_stuff.h"
 #include "g_game.h"
 #include "m_random.h"
+#include "m_menu.h" // ffdhidshfuisduifigergho9igj89dgodhfih AAAAAAAAAA
 #include "p_local.h"
 #include "p_slopes.h"
 #include "r_draw.h"
@@ -67,9 +68,8 @@ consvar_t cv_saltyhopsfx = {"hardcodehopsfx", "On", CV_SAVE, CV_OnOff, NULL, 0, 
 consvar_t cv_saltysquish = {"hardcodehopsquish", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 
 //Colourized HUD
-consvar_t cv_colorizedhud = {"colorizedhud", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+consvar_t cv_colorizedhud = {"colorizedhud", "Off", CV_SAVE|CV_CALL, CV_OnOff, Saturn_menu_Onchange, 0, NULL, NULL, 0, 0, NULL};
 consvar_t cv_colorizeditembox = {"colorizeditembox", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
-
 
 static CV_PossibleValue_t HudColor_cons_t[MAXSKINCOLORS+1];
 consvar_t cv_colorizedhudcolor = {"colorizedhudcolor", "Skin Color", CV_SAVE, HudColor_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL};
@@ -595,7 +595,9 @@ UINT8 K_GetKartColorByName(const char *name)
 UINT8 K_GetHudColor()
 {
 	if (stplyr && players - stplyr != consoleplayer) return stplyr->skincolor;
-	if (cv_colorizedhudcolor.value) return cv_colorizedhudcolor.value;
+	if (cv_colorizedhud.value){
+		if (cv_colorizedhudcolor.value) return cv_colorizedhudcolor.value;
+	}
 	return cv_playercolor.value;
 }
 
@@ -7654,28 +7656,25 @@ static void K_drawKartStats(void)
 	y += cv_stat_yoffset.value + (G_BattleGametype() ? (stplyr->kartstuff[k_bumper] ? -5 : -8) : 0) + spdoffset;
 	flags |= V_HUDTRANS;
 
-	INT32 skinnum;
-	skin_t fakeskin;
-	fakeskin = skins[stplyr->skin];
-	skinnum = stplyr->skin;
+	skin_t *fakeskin;
+	fakeskin = &skins[stplyr->skin];
 
 	// local skinner
-	if (stplyr->localskin) 
+	if (stplyr->localskin)
 	{
-		skinnum = stplyr->localskin - 1;
-		if (stplyr->mo->skinlocal)
-			fakeskin = localskins[stplyr->localskin - 1];
+		if (stplyr->skinlocal)
+			fakeskin = &localskins[stplyr->localskin - 1];
 		else
-			fakeskin = skins[stplyr->localskin - 1];
+			fakeskin = &skins[stplyr->localskin - 1];
 	}
 
 	if (!splitscreen)
 	{
 		// Skin name
-		V_DrawSmallString(x+20, y+12, flags|V_ALLOWLOWERCASE, va("%c%s", V_GetSkincolorChar(stplyr->skincolor), fakeskin.realname));
+		V_DrawSmallString(x+20, y+12, flags|V_ALLOWLOWERCASE, va("%c%s", V_GetSkincolorChar(stplyr->skincolor), fakeskin->realname));
 
 		// Icon and stats
-		V_DrawMappedPatch(x, y, flags, R_GetSkinFaceRank(stplyr), R_GetLocalTranslationColormap(stplyr->mo->skin, stplyr->mo->localskin, stplyr->skincolor, GTC_CACHE, stplyr->mo->skinlocal));
+		V_DrawMappedPatch(x, y, flags, R_GetSkinFaceRank(stplyr), R_GetLocalTranslationColormap(fakeskin, fakeskin, stplyr->skincolor, GTC_CACHE, stplyr->skinlocal));
 		V_DrawMappedPatch(x-3, y-2, flags, kp_facenum[min(9, max(1, stplyr->kartspeed))], R_GetTranslationColormap(TC_RAINBOW, SKINCOLOR_BLUEBERRY, GTC_CACHE));
 		V_DrawMappedPatch(x+10, y+10, flags, kp_facenum[min(9, max(1, stplyr->kartweight))], R_GetTranslationColormap(TC_RAINBOW, SKINCOLOR_BURGUNDY, GTC_CACHE));
 	}
@@ -8011,7 +8010,7 @@ static void K_drawKartItem(void)
 				V_DrawString(fx+24, fy+31, V_ALLOWLOWERCASE|V_HUDTRANS|fflags, va("x%d", stplyr->kartstuff[k_itemamount]));
 		else
 		{
-			V_DrawScaledPatch(fy+28, fy+41, V_HUDTRANS|fflags, kp_itemx);
+			V_DrawScaledPatch(fx+28, fy+41, V_HUDTRANS|fflags, kp_itemx);
 			V_DrawKartString(fx+38, fy+36, V_HUDTRANS|fflags, va("%d", stplyr->kartstuff[k_itemamount]));
 		}
 	}
