@@ -273,12 +273,16 @@ static menu_t SP_TimeAttackDef, SP_ReplayDef, SP_GuestReplayDef, SP_GhostDef;
 // Multiplayer
 #ifndef NONET
 static void M_PreStartServerMenu(INT32 choice);
+#ifdef MASTERSERVER
 static void M_PreStartServerMenuChoice(event_t *ev);
 static void M_PreConnectMenu(INT32 choice);
 static void M_PreConnectMenuChoice(event_t *ev);
+#endif
 static void M_StartServerMenu(INT32 choice);
+#ifdef MASTERSERVER
 static void M_ConnectMenu(INT32 choice);
 static void M_ConnectMenuModChecks(INT32 choice);
+#endif
 static void M_Refresh(INT32 choice);
 static void M_Connect(INT32 choice);
 #endif
@@ -1048,7 +1052,11 @@ static menuitem_t MP_MainMenu[] =
 
 	{IT_HEADER, NULL, "Join a game", NULL, 132-24},
 #ifndef NONET
+#ifndef MASTERSERVER
+	{IT_GRAYEDOUT,       NULL, "Internet server browser...",NULL,   142-24},
+#else
 	{IT_STRING|IT_CALL,       NULL, "Internet server browser...",M_PreConnectMenu,   142-24},
+#endif
 	{IT_STRING|IT_CALL, NULL, "Join last server",     M_ConnectLastServer,        150-24},
 	{IT_STRING|IT_KEYHANDLER, NULL, "Specify IPv4 address:",     M_HandleConnectIP,        158-24},
 #else
@@ -1065,7 +1073,11 @@ static menuitem_t MP_MainMenu[] =
 static menuitem_t MP_ServerMenu[] =
 {
 	{IT_STRING|IT_CVAR,                NULL, "Max. Player Count",     &cv_maxplayers,        10},
+#ifndef MASTERSERVER
+	{IT_GRAYEDOUT,                NULL, "Advertise",             NULL,         20},
+#else
 	{IT_STRING|IT_CVAR,                NULL, "Advertise",             &cv_advertise,         20},
+#endif
 	{IT_STRING|IT_CVAR|IT_CV_STRING,   NULL, "Server Name",           &cv_servername,        30},
 
 	{IT_STRING|IT_CVAR,                NULL, "Game Type",             &cv_newgametype,       68},
@@ -1167,7 +1179,7 @@ static const char* OP_ControlsTooltips[] =
 	"Setup player 3 controls.",
 	"Setup player 4 controls.",
 	
-	"Allowed amount of comtrols per key.",
+	"Allowed amount of controls per key.",
 	"Turn smoothing for non-analog turning.",
 
 };
@@ -1494,10 +1506,10 @@ static const char* OP_SoundTooltips[] =
 	"Frequency of character voice lines.",
 	"Should the powerup warning be a sound effect or music?",
 	"Testing sounds...",
-	"Should the game play music while unfocused?",
-	"Should the game play sound while unfocused?",
+	"Should the games music play while unfocused?",
+	"Should the games sound play while unfocused?",
 	"Options for advanced sound settings.",
-	
+
 };
 
 
@@ -1718,7 +1730,7 @@ static menuitem_t OP_GameOptionsMenu[] =
 static const char* OP_GameTooltips[] =
 {
 	"Toggles for all in-game items.",
-	"Speed of game in race mode.",
+	"Driving speed of game in race mode.",
 	"Crazier item rolls.",
 	"Mirror mode.",
 	"Number of laps.",
@@ -1763,7 +1775,7 @@ static const char* OP_ServerOptionsTooltips[] =
 	"How long map voting is.",
 	"How often should other gamemodes appear.",
 #ifndef NONET
-	"Max amount of players allowed in this server",
+	"Max amount of players allowed in this server.",
 	"Allow players to join this server.",
 	"Allow players to download addons.",
 	"Who has permission to pause the server?",
@@ -1775,9 +1787,15 @@ static const char* OP_ServerOptionsTooltips[] =
 #ifndef NONET
 static menuitem_t OP_AdvServerOptionsMenu[] =
 {
-	{IT_STRING | IT_CVAR | IT_CV_STRING,
-	                         NULL, "Server Browser Address",		&cv_masterserver,		 10},
+#ifndef MASTERSERVER
+	{IT_GRAYEDOUT,
 
+	                         NULL, "Server Browser Address",		NULL,		 10},
+#else
+	{IT_STRING | IT_CVAR | IT_CV_STRING,
+
+	                         NULL, "Server Browser Address",		&cv_masterserver,		 10},
+#endif
 	{IT_STRING | IT_CVAR,    NULL, "Attempts to resynchronise",		&cv_resynchattempts,	 40},
 	{IT_STRING | IT_CVAR,    NULL, "Delay limit (frames)",			&cv_maxping,			 50},
 	{IT_STRING | IT_CVAR,    NULL, "Delay timeout (s)",				&cv_pingtimeout,		 60},
@@ -9888,6 +9906,7 @@ static void M_Refresh(INT32 choice)
 #endif/*MASTERSERVER*/
 }
 
+#ifdef MASTERSERVER
 static void M_DrawServerCountAndHorizontalBar(void)
 {
 	const char *text;
@@ -9930,6 +9949,7 @@ static void M_DrawServerCountAndHorizontalBar(void)
 	V_DrawFill(1, currentMenu->y+32, center - radius - 2, 1, 0);
 	V_DrawFill(center + radius + 2, currentMenu->y+32, BASEVIDWIDTH - 1, 1, 0);
 }
+#endif
 
 static void M_DrawServerLines(INT32 x, INT32 page)
 {
@@ -9992,6 +10012,7 @@ static void M_DrawConnectMenu(void)
 	                         highlightflags, va("%u of %d", serverlistpage+1, numPages));
 
 	// Did you change the Server Browser address? Have a little reminder.
+	#ifdef MASTERSERVER
 	if (CV_IsSetToDefault(&cv_masterserver))
 		mservflags = mservflags|highlightflags|V_30TRANS;
 	else
@@ -10000,6 +10021,7 @@ static void M_DrawConnectMenu(void)
 	                         mservflags, va("MS: %s", cv_masterserver.string));
 
 	M_DrawServerCountAndHorizontalBar();
+	#endif
 
 	// When switching pages, slide the old page and the
 	// new page across the screen
@@ -10109,6 +10131,7 @@ void M_SortServerList(void)
 
 #ifndef NONET
 #ifdef UPDATE_ALERT
+#ifdef MASTERSERVER	
 static void M_CheckMODVersion(int id)
 {
 	char updatestring[500];
@@ -10125,12 +10148,15 @@ static void M_CheckMODVersion(int id)
 #endif
 	}
 }
+#endif //MASTERSERVER
 #endif/*UPDATE_ALERT*/
 
 #if defined (UPDATE_ALERT) && defined (HAVE_THREADS)
+#ifdef MASTERSERVER
 static void
 Check_new_version_thread (int *id)
 {
+
 	M_SetWaitingMode(M_WAITING_VERSION);
 
 	M_CheckMODVersion(*id);
@@ -10143,9 +10169,12 @@ Check_new_version_thread (int *id)
 	{
 		free(id);
 	}
+
 }
+#endif
 #endif/*defined (UPDATE_ALERT) && defined (HAVE_THREADS)*/
 
+#ifdef MASTERSERVER
 static void M_ConnectMenu(INT32 choice)
 {
 	(void)choice;
@@ -10190,6 +10219,7 @@ static void M_ConnectMenu(INT32 choice)
 #endif/*defined (MASTERSERVER) && defined (HAVE_THREADS)*/
 }
 
+
 static void M_ConnectMenuModChecks(INT32 choice)
 {
 	(void)choice;
@@ -10203,9 +10233,10 @@ static void M_ConnectMenuModChecks(INT32 choice)
 
 	M_ConnectMenu(-1);
 }
+#endif
 
 boolean firstDismissedNagThisBoot = true;
-
+#ifdef MASTERSERVER
 static void M_HandleMasterServerResetChoice(event_t *ev)
 {
 	INT32 choice = -1;
@@ -10232,21 +10263,25 @@ static void M_HandleMasterServerResetChoice(event_t *ev)
 			}
 		}
 	}
+
 }
+#endif
 
 static void M_PreStartServerMenu(INT32 choice)
 {
-	(void)choice;
 
+	(void)choice;
+#ifdef MASTERSERVER
 	if (!CV_IsSetToDefault(&cv_masterserver) && cv_masterserver_nagattempts.value > 0)
 	{
 		M_StartMessage(M_GetText("Hey! You've changed the Server Browser address.\n\nYou won't be able to host games on the official Server Browser.\nUnless you're from the future, this probably isn't what you want.\n\n\x83Press Accel\x80 to fix this and continue.\x80\nPress any other key to continue anyway.\n"),M_PreStartServerMenuChoice,MM_EVENTHANDLER);
 		return;
 	}
-
+#endif
 	M_StartServerMenu(-1);
-}
 
+}
+#ifdef MASTERSERVER
 static void M_PreConnectMenu(INT32 choice)
 {
 	(void)choice;
@@ -10271,6 +10306,7 @@ static void M_PreConnectMenuChoice(event_t *ev)
 	M_HandleMasterServerResetChoice(ev);
 	M_ConnectMenuModChecks(-1);
 }
+#endif
 #endif //NONET
 
 //===========================================================================
@@ -10499,7 +10535,9 @@ static void M_DrawLevelSelectOnly(boolean leftfade, boolean rightfade)
 
 static void M_DrawServerMenu(void)
 {
+
 	M_DrawLevelSelectOnly(false, false);
+	#ifdef MASTERSERVER
 	if (currentMenu == &MP_ServerDef && cv_advertise.value) // Remind players where they're hosting.
 	{
 		int mservflags = V_ALLOWLOWERCASE;
@@ -10509,7 +10547,9 @@ static void M_DrawServerMenu(void)
 			mservflags = mservflags|warningflags;
 		V_DrawCenteredThinString(BASEVIDWIDTH/2, BASEVIDHEIGHT-12, mservflags, va("Master Server: %s", cv_masterserver.string));
 	}
+	#endif
 	M_DrawGenericMenu();
+
 }
 
 static void M_MapChange(INT32 choice)
