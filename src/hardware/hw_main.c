@@ -117,6 +117,8 @@ consvar_t cv_secbright = {"secbright", "0", CV_SAVE, secbright_cons_t,
 							NULL, 0, NULL, NULL, 0, 0, NULL};
 							
 consvar_t cv_grfovchange = {"gr_fovchange", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+
+consvar_t cv_grvhseffect = {"gr_vhseffect", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 							 
 // values for the far clipping plane
 static float clipping_distances[] = {1024.0f, 2048.0f, 4096.0f, 6144.0f, 8192.0f, 12288.0f, 16384.0f};
@@ -133,7 +135,7 @@ static INT32 current_bsp_culling_distance = 0;
 //  - water and heat wave effects
 //  - intermission background
 //  - full screen scaling (use native resolution or windowed mode to avoid this)
-consvar_t cv_grscreentextures = {"gr_screentextures", "On", CV_CALL, CV_OnOff,
+consvar_t cv_grscreentextures = {"gr_screentextures", "On", CV_CALL|CV_SAVE, CV_OnOff,
                                  CV_screentextures_ONChange, 0, NULL, NULL, 0, 0, NULL};
 								 
 consvar_t cv_grshaders = {"gr_shaders", "On", CV_CALL|CV_SAVE, CV_OnOff, CV_grshaders_OnChange, 0, NULL, NULL, 0, 0, NULL};
@@ -4796,15 +4798,9 @@ static inline void HWR_DrawPrecipitationSprite(gr_vissprite_t *spr)
 		HWR_Lighting(&Surf, lightlevel, colormap);
 	}
 
-	if (spr->mobj->flags2 & MF2_SHADOW)
-	{
-		Surf.PolyColor.s.alpha = 0x40;
-		blend = PF_Translucent;
-	}
-	else if (spr->mobj->frame & FF_TRANSMASK)
+	if (spr->mobj->frame & FF_TRANSMASK)
 		blend = HWR_TranstableToAlpha((spr->mobj->frame & FF_TRANSMASK)>>FF_TRANSSHIFT, &Surf);
 	else
-
 	{
 		// BP: i agree that is little better in environement but it don't
 		//     work properly under glide nor with fogcolor to ffffff :(
@@ -6394,6 +6390,8 @@ void HWR_AddCommands(void)
 	
 	CV_RegisterVar(&cv_grpaletteshader);
 	CV_RegisterVar(&cv_grflashpal);	
+
+	CV_RegisterVar(&cv_grvhseffect);	
 }
 
 // --------------------------------------------------------------------------
@@ -6620,6 +6618,11 @@ void HWR_DoWipe(UINT8 wipenum, UINT8 scrnnum)
 
 	HWR_GetFadeMask(lumpnum);
 	HWD.pfnDoScreenWipe();
+}
+
+void HWR_RenderVhsEffect(fixed_t upbary, fixed_t downbary, UINT8 updistort, UINT8 downdistort, UINT8 barsize)
+{
+	HWD.pfnRenderVhsEffect(upbary, downbary, updistort, downdistort, barsize);
 }
 
 void HWR_MakeScreenFinalTexture(void)

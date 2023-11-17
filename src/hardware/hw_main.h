@@ -107,6 +107,7 @@ void HWR_StartScreenWipe(void);
 void HWR_EndScreenWipe(void);
 void HWR_DrawIntermissionBG(void);
 void HWR_DoWipe(UINT8 wipenum, UINT8 scrnnum);
+void HWR_RenderVhsEffect(fixed_t upbary, fixed_t downbary, UINT8 updistort, UINT8 downdistort, UINT8 barsize);
 void HWR_MakeScreenFinalTexture(void);
 void HWR_DrawScreenFinalTexture(int width, int height);
 
@@ -184,10 +185,12 @@ extern consvar_t cv_grbatching;
 extern consvar_t cv_grrenderdistance;
 extern consvar_t cv_grusecustomshaders;
 extern consvar_t cv_grpaletteshader;
+extern consvar_t cv_grscreentextures;
 extern consvar_t cv_grflashpal;
 extern consvar_t cv_grportals;
 extern consvar_t cv_nostencil;
 extern consvar_t cv_secbright;
+extern consvar_t cv_grvhseffect;
 
 extern CV_PossibleValue_t granisotropicmode_cons_t[];
 
