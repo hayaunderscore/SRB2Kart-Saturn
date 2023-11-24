@@ -595,11 +595,11 @@ UINT8 K_GetKartColorByName(const char *name)
 }
 
 UINT8 K_GetHudColor(void)
-{
-	if (stplyr && players - stplyr != consoleplayer) return stplyr->skincolor;
+{	
 	if (cv_colorizedhud.value){
 		if (cv_colorizedhudcolor.value) return cv_colorizedhudcolor.value;
 	}
+	if (stplyr && P_IsLocalPlayer(stplyr)) return stplyr->skincolor;
 	return (stplyr ? stplyr->skincolor : cv_playercolor.value);
 }
 
@@ -3266,7 +3266,7 @@ static angle_t K_GetSlopeRollAngle(player_t *p, boolean dontflip, boolean useRes
 	an = (lookAngle - xydirection);
 	final_slope = -(FixedMul(FINESINE(an>>ANGLETOFINESHIFT), zangle));
 	
-	if (camspin)
+	if (camspin[pNum])
 		an = (INT32)(final_slope - p->tilt_sprite); // do a direct snap
 	else
 		an = (INT32)(final_slope - p->tilt_sprite) / 3; // instead of just a direct snap

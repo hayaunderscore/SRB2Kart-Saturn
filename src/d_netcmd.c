@@ -195,6 +195,8 @@ static void Command_Isgamemodified_f(void);
 static void Command_Cheats_f(void);
 
 static void Command_ListSkins(void);
+static void Command_SkinSearch(void);
+
 
 #ifdef _DEBUG
 static void Command_Togglemodified_f(void);
@@ -1165,6 +1167,7 @@ void D_RegisterClientCommands(void)
 #endif
 
 	COM_AddCommand("listskins", Command_ListSkins);
+	COM_AddCommand("skinsearch", Command_SkinSearch);
 }
 
 /**
@@ -6065,6 +6068,26 @@ static void Command_ListSkins(void)
 	{
 		CONS_Printf("There are no more pages.\n");
 	}
+}
+
+static void Command_SkinSearch(void)
+{	
+	size_t i;
+	UINT16 s;
+	UINT16 ic = 0;
+	//skin_t *skininput = &skins[s];
+	for (i = 1; i < COM_Argc(); i++){
+		for( s = 0 ; s <  numallskins ; s++ )
+		{
+			skin_t *skininput = &skins[s];
+			if (strcasestr(skininput->realname,COM_Argv(i)))
+			{	
+				ic++;
+				CONS_Printf("%d. %s%s:\x80 %s\n", ic,HU_SkinColorToConsoleColor(skininput->prefcolor),skininput->realname,skininput->name);
+			}
+		}
+	}
+				CONS_Printf("Total %d skins.\n", ic);
 }
 
 /** Sends a color change for the console player, unless that player is moving.
