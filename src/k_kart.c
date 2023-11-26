@@ -8262,7 +8262,7 @@ static void K_DrawKartPositionNum(INT32 num)
 	if (!splitscreen)
 	{
 		fx = POSI_X + xoffs;
-		fy = BASEVIDHEIGHT - 8;
+		fy = POSI_Y;
 		fflags = V_SNAPTOBOTTOM|V_SNAPTORIGHT;
 	}
 	else if (splitscreen == 1)	// for this splitscreen, we'll use case by case because it's a bit different.
@@ -8277,7 +8277,7 @@ static void K_DrawKartPositionNum(INT32 num)
 		}
 		else	// if we're not p1, that means we're p2. display this at the bottom right, below the minimap.
 		{
-			fy = BASEVIDHEIGHT - 8;
+			fy = POSI_Y;
 			fflags = V_SNAPTOBOTTOM|V_SNAPTORIGHT;
 		}
 	}
