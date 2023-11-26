@@ -5453,15 +5453,13 @@ void G_WriteDemoExtraData(void)
 			}
 			if (demo_extradata[i] & DXD_LOCALSKIN)
 			{
-				// Skin
+				// Localskin
 				memset(name, 0, 16);
 				// check for different localskin conditions
 				if (players[i].skinlocal && players[i].localskin > 0)
 					strncpy(name, localskins[players[i].localskin - 1].name, 16);
 				else if (!players[i].skinlocal && players[i].localskin > 0)
 					strncpy(name, skins[players[i].localskin - 1].name, 16);
-				else
-					strncpy(name, "none", 16);
 				//CONS_Printf("Saved localskin data to replay: %s\n", name);
 				M_Memcpy(demo_p,name,16);
 				demo_p += 16;

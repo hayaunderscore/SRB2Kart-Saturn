@@ -3181,61 +3181,63 @@ void SetLocalPlayerSkin(INT32 playernum, const char *skinname, consvar_t *cvar)
 	player_t *player = &players[playernum];
 	INT32 i;
 
-	if (strcasecmp(skinname, "none"))
+	// reset our values to just remove these
+	player->localskin = 0;
+	player->skinlocal = false;
+
+	if (player->mo)
 	{
-		for (i = 0; i < numlocalskins; i++)
-		{
-			// search in the skin list
-			if (stricmp(localskins[i].name, skinname) == 0)
-			{
-				player->localskin = 1 + i;
-				player->skinlocal = true;
-				if (player->mo)
-				{
-					player->mo->localskin = &localskins[i];
-					player->mo->skinlocal = true;
-				}
-				break;
-			}
-		}
-		for (i = 0; i < numskins; i++)
-		{
-			// search in the skin list
-			if (stricmp(skins[i].name, skinname) == 0)
-			{
-				player->localskin = 1 + i;
-				player->skinlocal = false;
-				if (player->mo)
-				{
-					player->mo->localskin = &skins[i];
-					player->mo->skinlocal = false;
-				}
-				break;
-			}
-		}
+		player->mo->localskin = 0;
+		player->mo->skinlocal = false;
 	}
-	else
+
+	// Find it in the localskins list
+	for (i = 0; i < numlocalskins; i++)
 	{
-		player->localskin = 0;
-		player->skinlocal = false;
-		if (player->mo)
+		if (stricmp(localskins[i].name, skinname) == 0)
 		{
-			player->mo->localskin = 0;
-			player->mo->skinlocal = false;
+			player->localskin = 1 + i;
+			player->skinlocal = true;
+			if (player->mo)
+			{
+				player->mo->localskin = &localskins[i];
+				player->mo->skinlocal = true;
+			}
+			break;
 		}
 	}
 
-	if (cvar != NULL) {
-		if (player->localskin > 0) {
+	// Find it in our normal skin list
+	for (i = 0; i < numskins; i++)
+	{
+		if (stricmp(skins[i].name, skinname) == 0)
+		{
+			player->localskin = 1 + i;
+			player->skinlocal = false;
+			if (player->mo)
+			{
+				player->mo->localskin = &skins[i];
+				player->mo->skinlocal = false;
+			}
+			break;
+		}
+	}
+
+	if (cvar != NULL) 
+	{
+		if (player->localskin > 0) 
+		{
 			CV_StealthSet(&cv_fakelocalskin, ( (player->skinlocal) ? localskins : skins )[player->localskin - 1].name);
 			CV_StealthSet(cvar, ( (player->skinlocal) ? localskins : skins )[player->localskin - 1].name);
 		}
-		else {
+		else 
+		{
 			CV_StealthSet(&cv_fakelocalskin, "none");
 			CV_StealthSet(cvar, "none");
 		}
 	}
 
+	// call extradata to add this
 	demo_extradata[playernum] |= DXD_LOCALSKIN;
 }
 
