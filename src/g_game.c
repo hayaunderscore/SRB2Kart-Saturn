@@ -6112,8 +6112,6 @@ void G_GhostTicker(void)
 					g->p += 16; // Same tbh
 				if (ziptic & DXD_NAME)
 					g->p += 16; // yea
-				if (ziptic & DXD_LOCALSKIN) // we dont exactly want this either...
-					g->p += 16; // yea
 				if (ziptic & DXD_PLAYSTATE && READUINT8(g->p) != DXD_PST_PLAYING)
 					I_Error("Ghost is not a record attack ghost"); //@TODO lmao don't blow up like this
 			}
