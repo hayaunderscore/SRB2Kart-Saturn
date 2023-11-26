@@ -6850,7 +6850,7 @@ void G_BeginRecording(void)
 
 	totalfiles = 0;
 	for (i = mainwads; ++i < numwadfiles; )
-		if (wadfiles[i]->important)
+		if (wadfiles[i]->important || wadfiles[i]->localfile)
 	{
 		nameonly(( filename = va("%s", wadfiles[i]->filename) ));
 		WRITESTRINGL(demo_p, filename, MAX_WADPATH);
@@ -7152,7 +7152,7 @@ static UINT8 G_CheckDemoExtraFiles(UINT8 **pp, boolean quick)
 
 			for (j = 0; j < numwadfiles; ++j)
 			{
-				if (wadfiles[j]->important && j > mainwads)
+				if ((wadfiles[j]->important || wadfiles[j]->localfile) && j > mainwads)
 					nmusfilecount++;
 				else
 					continue;
@@ -7188,7 +7188,7 @@ static UINT8 G_CheckDemoExtraFiles(UINT8 **pp, boolean quick)
 	nmusfilecount = 0;
 
 	for (j = 0; j < numwadfiles; ++j)
-		if (wadfiles[j]->important && j > mainwads)
+		if ((wadfiles[j]->important || wadfiles[j]->localfile) && j > mainwads)
 			nmusfilecount++;
 
 	if (!error && filesloaded < nmusfilecount)
