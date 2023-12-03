@@ -3555,6 +3555,11 @@ UINT16 P_PartialAddWadFile(const char *wadfilename, boolean local)
 	S_LoadMusicDefs(wadnum);
 
 	//
+	// edit music defs for stuff like musictest
+	//
+	S_LoadMTDefs(wadnum);
+
+	//
 	// search for maps
 	//
 	lumpinfo = wadfiles[wadnum]->lumpinfo;
