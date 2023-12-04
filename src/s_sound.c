@@ -27,8 +27,8 @@
 #include "r_sky.h" // skyflatnum
 #include "p_local.h" // camera info
 #include "m_misc.h" // for tunes command
-#include "m_menu.h" // bird music stuff
 #include "m_cond.h" // for conditionsets
+#include "m_menu.h" // bird music stuff
 
 #ifdef HAVE_BLUA
 #include "lua_hook.h" // MusicChange hook
