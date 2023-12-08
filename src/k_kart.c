@@ -603,6 +603,11 @@ UINT8 K_GetHudColor(void)
 	return ((stplyr && gamestate == GS_LEVEL) ? stplyr->skincolor : cv_playercolor.value);
 }
 
+boolean K_UseColorHud(void)
+{
+	return (cv_colorizedhud.value && clr_hud);
+}
+
 //}
 
 //{ SRB2kart Net Variables
@@ -3105,7 +3110,7 @@ static void K_StretchPlayerGravity(player_t *p)
 	if (p->mo->slamsoundtimer)
 		p->mo->slamsoundtimer--;
 
-	if (cv_slamsound.value == 1 && (p->mo->eflags & MFE_JUSTHITFLOOR) && p->mo->stretchslam > 4*mos && !p->mo->slamsoundtimer)
+	if (cv_slamsound.value && (p->mo->eflags & MFE_JUSTHITFLOOR) && p->mo->stretchslam > 4*mos && !p->mo->slamsoundtimer)
 	{
 		S_StartSound(p->mo, sfx_s3k4c);
 		p->mo->slamsoundtimer = TICRATE;
@@ -3138,12 +3143,11 @@ static void K_StretchPlayerGravity(player_t *p)
 		else
 			slamDiv = FixedDiv(p->mo->stretchslam, stretchScaleFactor);
         p->mo->spritexscale = (dxs+(((slamDiv*2)/3)*2));
-        p->mo->spriteyscale = ((dys-(slamDiv)));
+        p->mo->spriteyscale = (dys-(slamDiv));
         if (p->mo->stretchslam > 0)
             p->mo->stretchslam -= (4*mos);
         else
             p->mo->stretchslam = 0;
-
     }
 }
 
@@ -3211,6 +3215,7 @@ static void K_QuiteSaltyHop(player_t *p)
 static INT32 K_FindPlayerNum(player_t *plyr)
 {
 	INT32 i;
+	
 	for(i = 0; i < 4; i++)
 	{
 		if (plyr == &players[displayplayers[i]])
@@ -3251,13 +3256,10 @@ static angle_t K_GetSlopeRollAngle(player_t *p, boolean dontflip, boolean useRes
     		p->mo->reservezangle = zangle;
     		p->mo->reservexydir = xydirection;
 	}
-	else
+	else if (p->mo->reservezangle)
 	{
-		if (p->mo->reservezangle)
-		{
-			zangle = p->mo->reservezangle;
-			xydirection = p->mo->reservexydir;
-		}
+		zangle = p->mo->reservezangle;
+		xydirection = p->mo->reservexydir;
 	}
 
 	if ((p->mo->eflags & MFE_VERTICALFLIP) && (!dontflip))
@@ -3265,16 +3267,10 @@ static angle_t K_GetSlopeRollAngle(player_t *p, boolean dontflip, boolean useRes
 
 	an = (lookAngle - xydirection);
 	final_slope = -(FixedMul(FINESINE(an>>ANGLETOFINESHIFT), zangle));
+		
+	an = (INT32)(final_slope - p->tilt_sprite) / (camspin[pNum] ? 1 : 3);
 	
-	if (camspin[pNum])
-		an = (INT32)(final_slope - p->tilt_sprite); // do a direct snap
-	else
-		an = (INT32)(final_slope - p->tilt_sprite) / 3; // instead of just a direct snap
-
-	if (an)
-		p->tilt_sprite += an;
-	else
-		p->tilt_sprite = final_slope;
+	p->tilt_sprite = an ? p->tilt_sprite + an : final_slope;	
 	return -p->tilt_sprite;
 }
 
@@ -7715,7 +7711,7 @@ static void K_drawKartItem(void)
 	patch_t *localpatch = kp_nodraw;
 	patch_t *localbg;
 	
-	if (cv_colorizeditembox.value && cv_colorizedhud.value && clr_hud)
+	if (cv_colorizeditembox.value && K_UseColorHud())
 		localbg = ((offset) ? kp_itembgclr[2] : kp_itembgclr[0]);
 	else
 		localbg = ((offset) ? kp_itembg[2] : kp_itembg[0]);
@@ -7880,7 +7876,7 @@ static void K_drawKartItem(void)
 				case KITEM_INVINCIBILITY:
 					localpatch = localinv;
 					if (cv_darkitembox.value){
-						if (cv_colorizeditembox.value && cv_colorizedhud.value && clr_hud)
+						if (cv_colorizeditembox.value && K_UseColorHud())
 							localbg = kp_itembgclr[offset+1];
 						else
 							localbg = kp_itembg[offset+1];
@@ -7907,7 +7903,7 @@ static void K_drawKartItem(void)
 				case KITEM_SPB:
 					localpatch = kp_selfpropelledbomb[offset];
 					if (cv_darkitembox.value){
-						if (cv_colorizeditembox.value && cv_colorizedhud.value && clr_hud)
+						if (cv_colorizeditembox.value && K_UseColorHud())
 							localbg = kp_itembgclr[offset+1];
 						else
 							localbg = kp_itembg[offset+1];
@@ -7922,7 +7918,7 @@ static void K_drawKartItem(void)
 				case KITEM_THUNDERSHIELD:
 					localpatch = kp_thundershield[offset];
 					if (cv_darkitembox.value){
-						if (cv_colorizeditembox.value && cv_colorizedhud.value && clr_hud)
+						if (cv_colorizeditembox.value && K_UseColorHud())
 							localbg = kp_itembgclr[offset+1];
 						else
 							localbg = kp_itembg[offset+1];
@@ -7995,7 +7991,7 @@ static void K_drawKartItem(void)
 		colmap = R_GetTranslationColormap(colormode, localcolor, GTC_CACHE);
 
 	
-	if (cv_colorizeditembox.value && cv_colorizedhud.value && clr_hud)
+	if (cv_colorizeditembox.value && K_UseColorHud())
 	{
 		V_DrawMappedPatch(fx, fy, V_HUDTRANS|fflags, localbg,colormap);
 	}
@@ -8012,7 +8008,7 @@ static void K_drawKartItem(void)
 	if (stplyr->kartstuff[k_itemamount] >= numberdisplaymin && !stplyr->kartstuff[k_itemroulette])
 	{
 		//Colourized hud	
-		if (cv_colorizedhud.value && clr_hud)
+		if (K_UseColorHud())
 		{
 		V_DrawMappedPatch(fx + (flipamount ? 48 : 0), fy, V_HUDTRANS|fflags|(flipamount ? V_FLIP : 0), kp_itemmulstickerclr[offset],colormap); // flip this graphic for p2 and p4 in split and shift it.	
 		}
@@ -8083,7 +8079,7 @@ void K_drawKartTimestamp(tic_t drawtime, INT32 TX, INT32 TY, INT16 emblemmap, UI
 		}
 	}
 
-	if (!cv_colorizedhud.value || !clr_hud)
+	if (!K_UseColorHud())
 		V_DrawScaledPatch(TX, TY, splitflags, ((mode == 2) ? kp_lapstickerwide : kp_timestickerwide));
 	else
 	{
@@ -8250,9 +8246,8 @@ static void K_DrawKartPositionNum(INT32 num)
 		scale *= 2;
 		overtake = true;	// this is used for splitscreen stuff in conjunction with flipdraw.
 	}
-	if (splitscreen)
-		scale /= 2;
-	if (cv_showinput.value && !splitscreen) // anuther one.
+	
+	if (splitscreen || (cv_showinput.value && !splitscreen))
 		scale /= 2;
 
 	W = FixedMul(W<<FRACBITS, scale)>>FRACBITS;
@@ -8674,7 +8669,7 @@ static void K_drawKartLaps(void)
 	else
 	{
 
-		if (!cv_colorizedhud.value || !clr_hud){
+		if (!K_UseColorHud()){
 			if ((cv_numlaps.value > 9) && (big_lap) && (cv_biglaps.value) && (!stplyr->exiting)){
 				if (stplyr->laps+1 > 9)
 					V_DrawScaledPatch(LAPS_X, LAPS_Y, V_HUDTRANS|splitflags, kp_lapstickerbig2);
@@ -8764,8 +8759,8 @@ static void K_drawKartSpeedometer(void)
 					V_DrawKartString(SPDM_X, SPDM_Y, V_HUDTRANS|splitflags, va("%4d %%", convSpeed));
 		}
 	}
-	else if (cv_newspeedometer.value == 2 && snw_speedo )  { // why bother if we dont?
-		if (!cv_colorizedhud.value || !clr_hud)
+	else if (cv_newspeedometer.value == 2 && snw_speedo)  { // why bother if we dont?
+		if (!K_UseColorHud())
 			V_DrawScaledPatch(SPDM_X + 1, SPDM_Y + 4, (V_HUDTRANS|splitflags), (skp_smallsticker));
 		else
 		{
@@ -8904,7 +8899,7 @@ static void K_drawKartBumpersOrKarma(void)
 		if (stplyr->kartstuff[k_bumper] <= 0)
 		{
 			//Colourized hud
-			if (cv_colorizedhud.value && clr_hud)
+			if (K_UseColorHud())
 			{
 				V_DrawMappedPatch(LAPS_X, LAPS_Y, V_HUDTRANS|splitflags, kp_karmastickerclr, colormap);
 			}
@@ -8918,7 +8913,7 @@ static void K_drawKartBumpersOrKarma(void)
 		{
 			if (stplyr->kartstuff[k_bumper] > 9 && cv_kartbumpers.value > 9)
 				//Colourized hud
-				if (cv_colorizedhud.value && clr_hud)
+				if (K_UseColorHud())
 				{
 					V_DrawMappedPatch(LAPS_X, LAPS_Y, V_HUDTRANS|splitflags, kp_bumperstickerwideclr, colormap);
 				}
@@ -8928,7 +8923,7 @@ static void K_drawKartBumpersOrKarma(void)
 				}
 			else
 				//Colourized hud
-				if (cv_colorizedhud.value && clr_hud)
+				if (K_UseColorHud())
 				{
 					V_DrawMappedPatch(LAPS_X, LAPS_Y, V_HUDTRANS|splitflags, kp_bumperstickerclr, colormap);
 				}
@@ -9168,12 +9163,12 @@ static void K_drawKartMinimapHead(mobj_t *mo, INT32 x, INT32 y, INT32 flags, pat
 	{
 		UINT8 *colormap = R_GetTranslationColormap((mo->colorized) ? TC_RAINBOW : skin, mo->color, GTC_CACHE);
 		
-		if (cv_minihead.value == 1)
+		if (cv_minihead.value)
 		{
 			colormap = R_GetLocalTranslationColormap(mo->skin, mo->localskin, mo->color, GTC_CACHE, skinlocal);
 			V_DrawFixedPatch(amxpos + (2 * FRACUNIT), amypos + (2 * FRACUNIT), FRACUNIT/2, flags, ( (skinlocal) ? localfacemmapprefix : facemmapprefix )[skin], colormap);
 		}
-		else if (cv_minihead.value == 0)
+		else
 		{
 			colormap = R_GetLocalTranslationColormap(mo->skin, mo->localskin, mo->color, GTC_CACHE, skinlocal);
 			V_DrawFixedPatch(amxpos, amypos, FRACUNIT, flags, ( (skinlocal) ? localfacemmapprefix : facemmapprefix )[skin], colormap);
@@ -9188,9 +9183,9 @@ static void K_drawKartMinimapHead(mobj_t *mo, INT32 x, INT32 y, INT32 flags, pat
 			&& ((G_RaceGametype() && mo->player->kartstuff[k_position] == spbplace)
 			|| (G_BattleGametype() && K_IsPlayerWanted(mo->player))))
 		{
-			if (cv_minihead.value == 1)
+			if (cv_minihead.value)
 			V_DrawFixedPatch(amxpos, amypos, FRACUNIT / 2, flags, kp_wantedreticle, NULL);
-			else if (cv_minihead.value == 0)
+			else
 			V_DrawFixedPatch(amxpos - (4<<FRACBITS), amypos - (4<<FRACBITS), FRACUNIT, flags, kp_wantedreticle, NULL);
 		}
 	}
@@ -9476,7 +9471,7 @@ static void K_drawBattleFullscreen(void)
 			V_DrawString(x-txoff, ty, 0, va("%d", stplyr->kartstuff[k_comebacktimer]/TICRATE));
 		else
 		{
-			if (!cv_colorizedhud.value || !clr_hud)
+			if (!K_UseColorHud())
 				V_DrawFixedPatch(x<<FRACBITS, ty<<FRACBITS, scale, 0, kp_timeoutstickerclr, NULL);
 			else
 			{
