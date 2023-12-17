@@ -1315,9 +1315,10 @@ static void R_ProjectSprite(mobj_t *thing)
 
 	size_t rot;
 	UINT8 flip;
-	/*boolean vflip = (!(thing->eflags & MFE_VERTICALFLIP) != !R_ThingVerticallyFlipped(thing));
+	/*boolean vflip = (!(thing->eflags & MFE_VERTICALFLIP) != !R_ThingVerticallyFlipped(thing));*/
+	
 	boolean mirrored = thing->mirrored;
-	boolean hflip = (!R_ThingHorizontallyFlipped(thing) != !mirrored);*/
+	boolean hflip = (!(thing->frame & FF_HORIZONTALFLIP) != !mirrored);
 
 	INT32 lindex;
 
@@ -1445,6 +1446,8 @@ static void R_ProjectSprite(mobj_t *thing)
 	if (sprframe->rotate != SRF_SINGLE || papersprite)
 	{
 		ang = R_PointToAngle (interp.x, interp.y) - interp.angle;
+		if (mirrored)
+			ang = InvAngle(ang);
 		if (papersprite)
 			ang_scale = abs(FINESINE(ang>>ANGLETOFINESHIFT));
 	}
@@ -1486,19 +1489,15 @@ static void R_ProjectSprite(mobj_t *thing)
 	spr_topoffset = spritecachedinfo[lump].topoffset;
 
 #ifdef ROTSPRITE
-	if (thing->player)
-	{
-		sliptiderollangle = FixedMul(FINECOSINE((ang) >> ANGLETOFINESHIFT), ((cv_sloperoll.value == 1) ? thing->player->sliproll*(thing->player->sliptidemem) : 0));
-	}
-	else
-		sliptiderollangle = 0;
-
-	if ((thing->rollangle)||(thing->sloperoll)||sliptiderollangle)
+	if ((thing->rollangle)||(thing->sloperoll)||(thing->player && thing->player->sliproll))
 	{
 		if (thing->player)
-			rollsum = (thing->rollangle) + (thing->sloperoll) + sliptiderollangle;
+		{
+			sliptiderollangle = cv_sliptideroll.value ? thing->player->sliproll*(thing->player->sliptidemem) : 0;
+			rollsum = (thing->rollangle)+(thing->sloperoll)+FixedMul(FINECOSINE((ang) >> ANGLETOFINESHIFT), sliptiderollangle);
+		}
 		else
-			rollsum = (thing->rollangle) + (thing->sloperoll);
+			rollsum = (thing->rollangle)+(thing->sloperoll);
 
 		rollangle = R_GetRollAngle(rollsum);
 		rotsprite = Patch_GetRotatedSprite(sprframe, (thing->frame & FF_FRAMEMASK), rot, flip, false, sprinfo, rollangle);
@@ -1539,6 +1538,8 @@ static void R_ProjectSprite(mobj_t *thing)
 		spr_offset += interp.spritexoffset * flipoffset;
 		spr_topoffset += interp.spriteyoffset * flipoffset;
 	}
+	
+	flip = !flip != !hflip;
 
 	if (flip)
 		offset = spr_offset - spr_width;

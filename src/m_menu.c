@@ -5274,9 +5274,9 @@ static void M_DrawGenericScrollMenu(void)
 	V_DrawScaledPatch(currentMenu->x - 24, cursory, 0,
 		W_CachePatchName("M_CURSOR", PU_CACHE));
 
+#ifdef HWRENDER
 	// dumb hack
 	// tooltips
-#ifdef HWRENDER
 	if (currentMenu == &OP_OpenGLOptionsDef)
 	{
 		if (!(OP_OpenGLTooltips[itemOn] == NULL)) 
@@ -5287,6 +5287,8 @@ static void M_DrawGenericScrollMenu(void)
 		}
 	}
 #endif
+	
+	
 	
 	if (currentMenu == &OP_SaturnDef)
 	{
