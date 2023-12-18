@@ -1189,18 +1189,13 @@ static menuitem_t OP_ControlsMenu[] =
 
 static const char* OP_ControlsTooltips[] =
 {
-	
 	"Setup player 1 controls.",
 	"Setup player 2 controls.",
 	"Setup player 3 controls.",
 	"Setup player 4 controls.",
-	
 	"Options for mouse control.",
-
-	
 	"Allowed amount of controls per key.",
 	"Turn smoothing for non-analog turning.",
-
 };
 
 static menuitem_t OP_AllControlsMenu[] =
@@ -1335,13 +1330,11 @@ static menuitem_t OP_MouseOptionsMenu[] =
 
 static const char* OP_MouseTooltips[] =
 {
-	
 	"Enable the use of the mouse.",
 	"Turn using the mouse.",
 	"Invert mouse movements.",
 	"Mouse horizontal sensitivity.",
 	"Mouse vertical sensitivity.",
-
 };
 
 /*static menuitem_t OP_Mouse2OptionsMenu[] =
@@ -1474,7 +1467,7 @@ static const char* OP_ExpTooltips[] =
 	"Fixes issues that resulted in Textures sticking from the ground sometimes.\n This may be CPU heavy and result in worse performance in some cases.",
 	"Fixes issues that resulted in Textures not being properly skewed\n example: Fences on slopes that didnt show proper.\n This may be CPU heavy and result in worse performance in some cases.",
 	"Fixes issues that resulted in Textures on Floor over Floors ZFighting heavily.",
-	"Toggle for FOF wall cutoff when slopes.",
+	"Toggle for FOF wall cutoff with slopes.",
 #endif
 };
 
@@ -1588,7 +1581,6 @@ static menuitem_t OP_SoundOptionsMenu[] =
 
 static const char* OP_SoundTooltips[] =
 {
-
 	"Turn Sound effects on or off.",
 	"Volume of sound effects.",
 	"Turn Sound effects on or off.",
@@ -1603,7 +1595,6 @@ static const char* OP_SoundTooltips[] =
 	"Should the games music play while unfocused?",
 	"Should the games sound play while unfocused?",
 	"Options for advanced sound settings.",
-
 };
 
 
@@ -2032,7 +2023,6 @@ static const char* OP_SaturnTooltips[] =
 	"Show player names on the minimap.",
 	"Minimize the player icons on the minimap.",
 	"Disables the flicker effect on Midnight Channel.",
-
 	"Options for player distortion effects.",
 	"Move position of HUD elements.",
 	"See the people who helped make this project possible!",
@@ -2211,7 +2201,6 @@ static const char* OP_BirdTooltips[] =
 	"Global toggle for all bird music features.",
 	"Resume level music from last position after music change.",
 	"Restart Special music if item is used again.",
-	
 	"Options for advanced music settings.",
 };
 
@@ -2255,7 +2244,6 @@ static const char* OP_TiltTooltips[] =
 	"Tilt camera while turning.",
 	"Smoothing value used.",
 	"Tilt during screen quakes.",
-	
 };
 
 enum
@@ -2288,7 +2276,6 @@ static const char* OP_AdvancedBirdTooltips[] =
 	"Fade in music while respawning.",
 	"Threshold for syncing music.",
 	"Only sync special music.",
-	
 };
 
 enum
@@ -4126,7 +4113,12 @@ void M_StartControlPanel(void)
 
 		// Reset these in case splitscreen messes things up
 		MPauseMenu[mpause_addons].alphaKey = 8;
-		MPauseMenu[mpause_addlocalskins].alphaKey = 24;
+		
+		if (IsPlayerAdmin(consoleplayer))
+			MPauseMenu[mpause_addlocalskins].alphaKey = 8;
+		else
+			MPauseMenu[mpause_addlocalskins].alphaKey = 24;
+	
 		MPauseMenu[mpause_scramble].alphaKey = 8;
 		MPauseMenu[mpause_switchmap].alphaKey = 24;
 
