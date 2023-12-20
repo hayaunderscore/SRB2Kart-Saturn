@@ -78,10 +78,6 @@ EXPORT void HWRAPI(SetShader) (int shader);
 EXPORT void HWRAPI(UnSetShader) (void);
 
 EXPORT void HWRAPI(SetShaderInfo) (hwdshaderinfo_t info, INT32 value);
-EXPORT void HWRAPI(LoadCustomShader) (int number, char *shader, size_t size, boolean fragment);
-EXPORT boolean HWRAPI(InitCustomShaders) (void);
-
-EXPORT void HWRAPI(SetShaderInfo) (hwdshaderinfo_t info, INT32 value);
 EXPORT void HWRAPI(LoadCustomShader) (int number, char *code, size_t size, boolean isfragment);
 
 EXPORT void HWRAPI(StartBatching) (void);
@@ -123,26 +119,19 @@ struct hwdriver_s
 	DoScreenWipe        	pfnDoScreenWipe;
 	DrawIntermissionBG  	pfnDrawIntermissionBG;
 	MakeScreenTexture   	pfnMakeScreenTexture;
-	RenderVhsEffect     pfnRenderVhsEffect;
+	RenderVhsEffect     	pfnRenderVhsEffect;
 	MakeScreenFinalTexture  pfnMakeScreenFinalTexture;
 	DrawScreenFinalTexture  pfnDrawScreenFinalTexture;
 
 	RenderSkyDome 			pfnRenderSkyDome;
 
-	LoadShaders 			pfnLoadShaders;
-	KillShaders 			pfnKillShaders;
+	CompileShaders      	pfnCompileShaders;
+	CleanShaders       	 	pfnCleanShaders;
 	SetShader 				pfnSetShader;
 	UnSetShader 			pfnUnSetShader;
-	CompileShaders      pfnCompileShaders;
-	CleanShaders        pfnCleanShaders;
-	SetShader 			pfnSetShader;
-	UnSetShader 		pfnUnSetShader;
-
+	
 	SetShaderInfo       	pfnSetShaderInfo;
-	LoadCustomShader 		pfnLoadCustomShader;
-	InitCustomShaders 		pfnInitCustomShaders;
-	SetShaderInfo       pfnSetShaderInfo;
-	LoadCustomShader	pfnLoadCustomShader;
+	LoadCustomShader		pfnLoadCustomShader;
 
 	StartBatching 			pfnStartBatching;
 	RenderBatches 			pfnRenderBatches;

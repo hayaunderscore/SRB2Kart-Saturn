@@ -196,10 +196,8 @@ static void CV_useCustomShaders_ONChange(void)
 	if (rendermode == render_opengl)
 	{
 		if (HWR_UseShader())
-			HWD.pfnInitCustomShaders();
+			HWD.pfnCompileShaders();
 	}
-    //if (rendermode == render_opengl)
-        //HWD.pfnInitCustomShaders();
 }
 
 // change the palette directly to see the change
@@ -892,20 +890,16 @@ void HWR_RenderPlane(subsector_t *subsector, extrasubsector_t *xsub, boolean isc
 	if (HWR_UseShader())
 	{	
 		if (PolyFlags & PF_Fog)
-			HWD.pfnSetShader(6);	// fog shader
+			HWD.pfnSetShader(SHADER_FOG);	// fog shader
 		else if (PolyFlags & PF_Ripple)
 			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 11 : 5); // water shader
+			HWD.pfnSetShader(SHADER_WATER);	// water shader
 		else
 			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 9 : 1);	// floor shader
+			HWD.pfnSetShader(SHADER_FLOOR);	// floor shader
 		
 		PolyFlags |= PF_ColorMapped;
 	}
-	if (PolyFlags & PF_Fog)
-		HWD.pfnSetShader(SHADER_FOG);	// fog shader
-	else if (PolyFlags & PF_Ripple)
-		HWD.pfnSetShader(SHADER_WATER);	// water shader
-	else
-		HWD.pfnSetShader(SHADER_FLOOR);	// floor shader
 
 	HWD.pfnDrawPolygon(&Surf, planeVerts, nrPlaneVerts, PolyFlags, false);
 
@@ -1062,9 +1056,9 @@ static void HWR_DrawSegsSplats(FSurfaceInfo * pSurf)
 		if (HWR_UseShader())
 		{
 			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 2);	// wall shader
+			HWD.pfnSetShader(SHADER_WALL);	// wall shader
 		}
-		
-		HWD.pfnSetShader(SHADER_WALL);	// wall shader
+
 		HWD.pfnDrawPolygon(&pSurf, wallVerts, 4, i|PF_Modulated|PF_Decal, false);
 	}
 }
@@ -1101,9 +1095,9 @@ void HWR_ProjectWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend
 	if (HWR_UseShader())
 	{
 		HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 2);	// wall shader
+		HWD.pfnSetShader(SHADER_WALL);	// wall shader
 		blendmode |= PF_ColorMapped;
 	}
-	HWD.pfnSetShader(SHADER_WALL);	// wall shader
 
 	// don't draw to color buffer when drawing to stencil
 	if (gl_drawing_stencil)
@@ -3506,10 +3500,10 @@ void HWR_RenderPolyObjectPlane(polyobj_t *polysector, boolean isceiling, fixed_t
 	if (HWR_UseShader())
 	{		
 		HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 9 : 1);	// floor shader
+		HWD.pfnSetShader(SHADER_FLOOR);		// floor shader
 		blendmode |= PF_ColorMapped;
 	}
-		
-	HWD.pfnSetShader(SHADER_FLOOR);		// floor shader
+
 	HWD.pfnDrawPolygon(&Surf, planeVerts, nrPlaneVerts, blendmode, false);
 }
 
@@ -4324,9 +4318,9 @@ static void HWR_DrawSpriteShadow(gr_vissprite_t *spr, GLPatch_t *gpatch, float t
 		if (HWR_UseShader())
 		{
 			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 9 : 1);	// floor shader
+			HWD.pfnSetShader(SHADER_FLOOR);	// floor shader
 		}
-		
-		HWD.pfnSetShader(SHADER_FLOOR);	// floor shader
+
 		HWD.pfnDrawPolygon(&sSurf, swallVerts, 4, PF_Translucent|PF_Modulated, false);
 	}
 }
@@ -4697,11 +4691,10 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 		if (HWR_UseShader())
 		{
 			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 3);	// sprite shader
+			HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
 			blend |= PF_ColorMapped;
 		}
-			
 
-		HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
 		HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 
 		top = bot;
@@ -4744,10 +4737,10 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 	if (HWR_UseShader())
 	{
 		HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 3);	// sprite shader
+		HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
 		blend |= PF_ColorMapped;
 	}
-		
-	HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
+
 	HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 }
 
@@ -4903,10 +4896,10 @@ static void HWR_DrawSprite(gr_vissprite_t *spr)
 		if (HWR_UseShader())
 		{
 			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 3);	// sprite shader
+			HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
 			blend |= PF_ColorMapped;
 		}
-		
-		HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
+
 		HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 	}
 }
@@ -5003,10 +4996,10 @@ static inline void HWR_DrawPrecipitationSprite(gr_vissprite_t *spr)
 	if (HWR_UseShader())
 	{
 		HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 3);	// sprite shader
+		HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
 		blend |= PF_ColorMapped;
 	}
-		
-	HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
+
 	HWD.pfnDrawPolygon(&Surf, wallVerts, 4, blend|PF_Modulated, false);
 }
 
@@ -6671,8 +6664,6 @@ void HWR_RenderWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend,
 
 	pSurf->PolyColor.s.alpha = alpha; // put the alpha back after lighting
 
-	HWD.pfnSetShader(SHADER_WALL);	// wall shader
-
 	if (blend & PF_Environment)
 		blendmode |= PF_Occlude;	// PF_Occlude must be used for solid objects
 
@@ -6680,6 +6671,7 @@ void HWR_RenderWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend,
 	{
 		blendmode |= PF_Fog;
 		HWD.pfnSetShader(6);	// fog shader
+		HWD.pfnSetShader(SHADER_FOG);	// fog shader
 	}
 
 	blendmode |= PF_Modulated;	// No PF_Occlude means overlapping (incorrect) transparency
@@ -6689,6 +6681,7 @@ void HWR_RenderWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend,
 		if (HWR_UseShader())
 		{
 			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 2);	// wall shader
+			HWD.pfnSetShader(SHADER_WALL);	// wall shader
 			blendmode |= PF_ColorMapped;
 		}
 	}

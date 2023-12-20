@@ -91,6 +91,7 @@ void HWR_LoadCustomShadersFromFile(UINT16 wadnum, boolean PK3);
 const char *HWR_GetShaderName(INT32 shader);
 
 extern customshaderxlat_t shaderxlat[];
+
 void HWR_SetViewSize(void);
 void HWR_AddCommands(void);
 void HWR_SetTransform(float fpov, player_t *player);
