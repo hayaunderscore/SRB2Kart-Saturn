@@ -2166,8 +2166,8 @@ int W_VerifyNMUSlumps(const char *filename)
 		{"MUSCINFO", 8}, // Music test definitions
 
 #ifdef HWRENDER
-		{"SHADERS", 7},
-		{"SH_", 3},
+		{"SHADERS", 7}, // OpenGL shader definitions
+		{"SH_", 3}, // GLSL shader
 #endif
 		{NULL, 0},
 	};

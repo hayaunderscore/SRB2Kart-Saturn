@@ -484,6 +484,14 @@ boolean HWR_PalRenderFlashpal(void)
 	return (cv_grpaletteshader.value && HWR_UseShader() && cv_grflashpal.value);
 }
 
+// Sets the shader state.
+static void HWR_SetShaderState(void)
+{
+	HWD.pfnSetSpecialState(HWD_SET_SHADERS, HWR_UseShader());
+	HWD.pfnSetShader(SHADER_DEFAULT);
+}
+
+
 void HWR_Lighting(FSurfaceInfo *Surface, INT32 light_level, extracolormap_t *colormap)
 {
 	RGBA_t poly_color, tint_color, fade_color;
@@ -6470,8 +6478,7 @@ void HWR_RenderFrame(INT32 viewnumber, player_t *player, boolean skybox)
 	HWR_ClearClipper();
 
 	// Reset the shader state.
-	HWD.pfnSetSpecialState(HWD_SET_SHADERS, cv_grshaders.value);
-	HWD.pfnSetShader(0);
+	HWR_SetShaderState();
 
 	validcount++;
 
