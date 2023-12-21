@@ -157,6 +157,45 @@ typedef struct
 	FLOAT       s,t;
 } FOutVector;
 
+
+#ifdef GL_SHADERS
+// Shader targets used to render specific types of geometry.
+// A shader target is resolved to an actual shader with HWR_GetShaderFromTarget.
+// The shader returned may be a base shader or a custom shader.
+enum
+{
+	SHADER_FLOOR,
+	SHADER_WALL,
+	SHADER_MODEL,
+	SHADER_SPRITE,
+	SHADER_WATER,
+	SHADER_FOG,
+	SHADER_SKY,
+	SHADER_PALETTE_POSTPROCESS,
+
+	NUMSHADERTARGETS,
+};
+
+// Must be at least NUMSHADERTARGETS*2 to fit base and custom shaders for each shader target.
+#define HWR_MAXSHADERS NUMSHADERTARGETS*2
+
+// Custom shader reference table
+typedef struct
+{
+	const char *type;
+	INT32 id;
+} customshaderxlat_t;
+
+enum hwdshaderstage
+{
+	HWD_SHADERSTAGE_VERTEX,
+	HWD_SHADERSTAGE_FRAGMENT,
+};
+
+typedef enum hwdshaderstage hwdshaderstage_t;
+
+#endif
+
 // ==========================================================================
 //                                                               RENDER MODES
 // ==========================================================================

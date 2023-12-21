@@ -1523,15 +1523,6 @@ void D_SRB2Main(void)
 	// but after the OpenGL library loads.
 	HWR_AddCommands();
 #endif
-
-#ifdef HWRENDER
-	if (rendermode == render_opengl)
-	{
-		for (i = 0; i < numwadfiles; i++)
-			HWR_LoadShaders(i, (wadfiles[i]->type == RET_PK3));
-	}
-#endif
-
 	//--------------------------------------------------------- CONSOLE
 	// setup loading screen
 	SCR_Startup();

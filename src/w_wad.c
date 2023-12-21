@@ -841,7 +841,8 @@ UINT16 W_InitFile(const char *filename, const char *lumpname, UINT16 *wadnump, b
 	numwadfiles++; // must come BEFORE W_LoadDehackedLumps, so any addfile called by COM_BufInsertText called by Lua doesn't overwrite what we just loaded
 
 		// Read shaders from file
-		W_ReadFileShaders(wadfile);
+		if (rendermode == render_opengl)
+			HWR_LoadCustomShadersFromFile(numwadfiles - 1, (type == RET_PK3));
 
 	// TODO: HACK ALERT - Load Lua & SOC stuff right here. I feel like this should be out of this place, but... Let's stick with this for now.
 	switch (wadfile->type)
@@ -2162,8 +2163,8 @@ int W_VerifyNMUSlumps(const char *filename)
 		{"MUSCINFO", 8}, // Music test definitions
 
 #ifdef HWRENDER
-		{"SHADERS", 7},
-		{"SH_", 3},
+		{"SHADERS", 7}, // OpenGL shader definitions
+		{"SH_", 3}, // GLSL shader
 #endif
 		{NULL, 0},
 	};

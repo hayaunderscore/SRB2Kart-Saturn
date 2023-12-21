@@ -73,14 +73,13 @@ EXPORT void HWRAPI(DrawScreenFinalTexture) (int width, int height);
 EXPORT void HWRAPI(PostImgRedraw) (float points[SCREENVERTS][SCREENVERTS][2]);
 
 // jimita
-EXPORT boolean HWRAPI(LoadShaders) (void);
-EXPORT void HWRAPI(KillShaders) (void);
-EXPORT void HWRAPI(SetShader) (int shader);
+EXPORT boolean HWRAPI(InitShaders) (void);
+EXPORT void HWRAPI(LoadShader) (int slot, char *code, hwdshaderstage_t stage);
+EXPORT boolean HWRAPI(CompileShader) (int slot);
+EXPORT void HWRAPI(SetShader) (int slot);
 EXPORT void HWRAPI(UnSetShader) (void);
 
 EXPORT void HWRAPI(SetShaderInfo) (hwdshaderinfo_t info, INT32 value);
-EXPORT void HWRAPI(LoadCustomShader) (int number, char *shader, size_t size, boolean fragment);
-EXPORT boolean HWRAPI(InitCustomShaders) (void);
 
 EXPORT void HWRAPI(StartBatching) (void);
 EXPORT void HWRAPI(RenderBatches) (precise_t *sSortTime, precise_t *sDrawTime, int *sNumPolys, int *sNumVerts, int *sNumCalls, int *sNumShaders, int *sNumTextures, int *sNumPolyFlags, int *sNumColors);
@@ -122,20 +121,19 @@ struct hwdriver_s
 	DoScreenWipe        	pfnDoScreenWipe;
 	DrawIntermissionBG  	pfnDrawIntermissionBG;
 	MakeScreenTexture   	pfnMakeScreenTexture;
-	RenderVhsEffect     pfnRenderVhsEffect;
+	RenderVhsEffect     	pfnRenderVhsEffect;
 	MakeScreenFinalTexture  pfnMakeScreenFinalTexture;
 	DrawScreenFinalTexture  pfnDrawScreenFinalTexture;
 
 	RenderSkyDome 			pfnRenderSkyDome;
 
-	LoadShaders 			pfnLoadShaders;
-	KillShaders 			pfnKillShaders;
+	InitShaders         	pfnInitShaders;
+	LoadShader          	pfnLoadShader;
+	CompileShader       	pfnCompileShader;
 	SetShader 				pfnSetShader;
 	UnSetShader 			pfnUnSetShader;
-
+	
 	SetShaderInfo       	pfnSetShaderInfo;
-	LoadCustomShader 		pfnLoadCustomShader;
-	InitCustomShaders 		pfnInitCustomShaders;
 
 	StartBatching 			pfnStartBatching;
 	RenderBatches 			pfnRenderBatches;

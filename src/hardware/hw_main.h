@@ -83,7 +83,7 @@ boolean HWR_Screenshot(const char *lbmname);
 // hw_main.c
 void HWR_RenderFrame(INT32 viewnumber, player_t *player, boolean skybox);
 void HWR_RenderPlayerView(INT32 viewnumber, player_t *player);
-void HWR_LoadShaders(UINT16 wadnum, boolean PK3);
+
 void HWR_SetViewSize(void);
 void HWR_AddCommands(void);
 void HWR_SetTransform(float fpov, player_t *player);
