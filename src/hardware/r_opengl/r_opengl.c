@@ -659,14 +659,14 @@ typedef enum
 
 typedef struct gl_shader_s
 {
+	char *vertex_shader;
+	char *fragment_shader;
 	GLuint program;
 	GLint uniforms[gluniform_max+1];
-	boolean custom;
 } gl_shader_t;
 
 static gl_shader_t gl_shaders[HWR_MAXSHADERS];
-static gl_shader_t gl_usershaders[HWR_MAXSHADERS];
-static shadersource_t gl_customshaders[HWR_MAXSHADERS];
+static gl_shader_t gl_fallback_shader;
 
 // 09102020
 typedef struct gl_shaderstate_s
@@ -682,22 +682,17 @@ static gl_shaderstate_t gl_shaderstate;
 static float shader_leveltime = 0;
 
 // Lactozilla: Shader functions
-static boolean Shader_CompileProgram(gl_shader_t *shader, GLint i, const GLchar *vert_shader, const GLchar *frag_shader);
+static boolean Shader_CompileProgram(gl_shader_t *shader, GLint i);
 static void Shader_CompileError(const char *message, GLuint program, INT32 shadernum);
 static void Shader_SetUniforms(FSurfaceInfo *Surface, GLRGBAFloat *poly, GLRGBAFloat *tint, GLRGBAFloat *fade);
 
 static GLRGBAFloat shader_defaultcolor = {1.0f, 1.0f, 1.0f, 1.0f};
 
-
-// ================
-//  Vertex shaders
-// ================
-
 //
 // Generic vertex shader
 //
 
-#define GLSL_DEFAULT_VERTEX_SHADER \
+#define GLSL_FALLBACK_VERTEX_SHADER \
 	"void main()\n" \
 	"{\n" \
 		"gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;\n" \
@@ -706,321 +701,16 @@ static GLRGBAFloat shader_defaultcolor = {1.0f, 1.0f, 1.0f, 1.0f};
 		"gl_ClipVertex = gl_ModelViewMatrix * gl_Vertex;\n" \
 	"}\0"
 
-
-// ==================
-//  Fragment shaders
-// ==================
-
 //
 // Generic fragment shader
 //
 
-#define GLSL_DEFAULT_FRAGMENT_SHADER \
+#define GLSL_FALLBACK_FRAGMENT_SHADER \
 	"uniform sampler2D tex;\n" \
 	"uniform vec4 poly_color;\n" \
 	"void main(void) {\n" \
 		"gl_FragColor = texture2D(tex, gl_TexCoord[0].st) * poly_color;\n" \
 	"}\0"
-
-//
-// Software fragment shader
-//
-
-#define GLSL_DOOM_COLORMAP \
-	"float R_DoomColormap(float light, float z)\n" \
-	"{\n" \
-		"float lightnum = clamp(light / 17.0, 0.0, 15.0);\n" \
-		"float lightz = clamp(z / 16.0, 0.0, 127.0);\n" \
-		"float startmap = (15.0 - lightnum) * 4.0;\n" \
-		"float scale = 160.0 / (lightz + 1.0);\n" \
-		"return startmap - scale * 0.5;\n" \
-	"}\n"
-
-#define GLSL_DOOM_COLORMAP_walls \
-	"float R_DoomColormap(float light, float z)\n" \
-	"{\n" \
-		"float lightnum = clamp(light / 17.0, 0.0, 15.0);\n" \
-		"float lightz = clamp(z / 16.0, 0.0, 127.0);\n" \
-		"float startmap = (15.0 - lightnum) * 4.0;\n" \
-		"float scale = 160.0 / (lightz + 1.0);\n" \
-		"float cap = (155.0 - light) * 0.26;\n" \
-		"return max(startmap * 1.05 - scale * 0.5 * 2.2, cap);\n" \
-	"}\n"
-	
-#define GLSL_DOOM_COLORMAP_floors \
-	"float R_DoomColormap(float light, float z)\n" \
-	"{\n" \
-		"float lightnum = clamp(light / 17.0, 0.0, 15.0);\n" \
-		"float lightz = clamp(z / 16.0, 0.0, 127.0);\n" \
-		"float startmap = (15.0 - lightnum) * 4.0;\n" \
-		"float scale = 160.0 / (lightz + 1.0);\n" \
-		"float cap = (155.0 - light) * 0.26;\n" \
-		"return max(startmap * 1.06 - scale * 0.5 * 1.15, cap);\n" \
-	"}\n"
-	
-
-#define GLSL_DOOM_LIGHT_EQUATION \
-	"float R_DoomLightingEquation(float light)\n" \
-	"{\n" \
-		"float z = gl_FragCoord.z / gl_FragCoord.w;\n" \
-		"float colormap = floor(R_DoomColormap(light, z)) + 0.5;\n" \
-		"return clamp(colormap, 0.0, 31.0) / 32.0;\n" \
-	"}\n"
-
-#define GLSL_SOFTWARE_TINT_EQUATION \
-	"if (tint_color.a > 0.0) {\n" \
-		"float color_bright = sqrt((base_color.r * base_color.r) + (base_color.g * base_color.g) + (base_color.b * base_color.b));\n" \
-		"float strength = sqrt(9.0 * tint_color.a);\n" \
-		"final_color.r = clamp((color_bright * (tint_color.r * strength)) + (base_color.r * (1.0 - strength)), 0.0, 1.0);\n" \
-		"final_color.g = clamp((color_bright * (tint_color.g * strength)) + (base_color.g * (1.0 - strength)), 0.0, 1.0);\n" \
-		"final_color.b = clamp((color_bright * (tint_color.b * strength)) + (base_color.b * (1.0 - strength)), 0.0, 1.0);\n" \
-	"}\n"
-
-#define GLSL_SOFTWARE_FADE_EQUATION \
-	"float darkness = R_DoomLightingEquation(lighting);\n" \
-	"if (fade_start != 0.0 || fade_end != 31.0) {\n" \
-		"float fs = fade_start / 31.0;\n" \
-		"float fe = fade_end / 31.0;\n" \
-		"float fd = fe - fs;\n" \
-		"darkness = clamp((darkness - fs) * (1.0 / fd), 0.0, 1.0);\n" \
-	"}\n" \
-	"final_color = mix(final_color, fade_color, darkness);\n"
-
-#define GLSL_SOFTWARE_UNIFORMS \
-	"uniform sampler2D tex;\n" \
-	"uniform vec4 poly_color;\n" \
-	"uniform vec4 tint_color;\n" \
-	"uniform vec4 fade_color;\n" \
-	"uniform float lighting;\n" \
-	"uniform float fade_start;\n" \
-	"uniform float fade_end;\n"
-
-#define GLSL_SOFTWARE_MAIN \
-	"void main(void) {\n" \
-		"vec4 texel = texture2D(tex, gl_TexCoord[0].st);\n" \
-		"vec4 base_color = texel * poly_color;\n" \
-		"vec4 final_color = base_color;\n" \
-		GLSL_SOFTWARE_TINT_EQUATION \
-		GLSL_SOFTWARE_FADE_EQUATION \
-		"final_color.a = texel.a * poly_color.a;\n" \
-		"gl_FragColor = final_color;\n" \
-	"}\n"
-
-#define GLSL_SOFTWARE_FRAGMENT_SHADER_FLOORS \
-	GLSL_SOFTWARE_UNIFORMS \
-	GLSL_DOOM_COLORMAP_floors \
-	GLSL_DOOM_LIGHT_EQUATION \
-	GLSL_SOFTWARE_MAIN \
-	"\0"
-
-#define GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS \
-	GLSL_SOFTWARE_UNIFORMS \
-	GLSL_DOOM_COLORMAP_walls \
-	GLSL_DOOM_LIGHT_EQUATION \
-	GLSL_SOFTWARE_MAIN \
-	"\0"
-
-#define GLSL_SOFTWARE_PAL_UNIFORMS \
-	"uniform sampler2D tex;\n" \
-	"uniform sampler2D lighttable_tex;\n" \
-	"uniform sampler3D lookup_tex;\n" \
-	"uniform int palette[768];\n" \
-	"uniform vec4 poly_color;\n" \
-	"uniform float lighting;\n" \
-
-#define GLSL_SOFTWARE_PAL_MAIN \
-	"void main(void) {\n" \
-		"vec4 texel = texture2D(tex, gl_TexCoord[0].st);\n" \
-		"int tex_pal_idx = int(texture3D(lookup_tex, vec3((texel * 63.0 + 0.5) / 64.0))[0] * 255.0);\n" \
-		"float z = gl_FragCoord.z / gl_FragCoord.w;\n" \
-		"int light_y = int(clamp(floor(R_DoomColormap(lighting, z)), 0.0, 31.0));\n" \
-		"vec2 lighttable_coord = vec2((float(tex_pal_idx) + 0.5) / 256.0, (float(light_y) + 0.5) / 32.0);\n" \
-		"int final_idx = int(texture2D(lighttable_tex, lighttable_coord)[0] * 255.0);\n" \
-		"vec4 final_color = vec4(float(palette[final_idx*3])/255.0, float(palette[final_idx*3+1])/255.0, float(palette[final_idx*3+2])/255.0, 1.0);\n" \
-		"final_color.a = texel.a * poly_color.a;\n" \
-		"gl_FragColor = final_color;\n" \
-	"}\n"
-
-#define GLSL_SOFTWARE_PAL_FRAGMENT_SHADER_FLOORS \
-	GLSL_SOFTWARE_PAL_UNIFORMS \
-	GLSL_DOOM_COLORMAP_floors \
-	GLSL_SOFTWARE_PAL_MAIN \
-	"\0"
-
-#define GLSL_SOFTWARE_PAL_FRAGMENT_SHADER_WALLS \
-	GLSL_SOFTWARE_PAL_UNIFORMS \
-	GLSL_DOOM_COLORMAP_walls \
-	GLSL_SOFTWARE_PAL_MAIN \
-	"\0"
-
-//
-// Water surface shader
-//
-// Mostly guesstimated, rather than the rest being built off Software science.
-// Still needs to distort things underneath/around the water...
-//
-
-#define GLSL_WATER_FRAGMENT_SHADER \
-	"uniform sampler2D tex;\n" \
-	"uniform vec4 poly_color;\n" \
-	"uniform vec4 tint_color;\n" \
-	"uniform vec4 fade_color;\n" \
-	"uniform float lighting;\n" \
-	"uniform float fade_start;\n" \
-	"uniform float fade_end;\n" \
-	"uniform float leveltime;\n" \
-	"const float freq = 0.025;\n" \
-	"const float amp = 0.025;\n" \
-	"const float speed = 2.0;\n" \
-	"const float pi = 3.14159;\n" \
-	GLSL_DOOM_COLORMAP \
-	GLSL_DOOM_LIGHT_EQUATION \
-	"void main(void) {\n" \
-		"float z = (gl_FragCoord.z / gl_FragCoord.w) / 2.0;\n" \
-		"float a = -pi * (z * freq) + (leveltime * speed);\n" \
-		"float sdistort = sin(a) * amp;\n" \
-		"float cdistort = cos(a) * amp;\n" \
-		"vec4 texel = texture2D(tex, vec2(gl_TexCoord[0].s - sdistort, gl_TexCoord[0].t - cdistort));\n" \
-		"vec4 base_color = texel * poly_color;\n" \
-		"vec4 final_color = base_color;\n" \
-		GLSL_SOFTWARE_TINT_EQUATION \
-		GLSL_SOFTWARE_FADE_EQUATION \
-		"final_color.a = texel.a * poly_color.a;\n" \
-		"gl_FragColor = final_color;\n" \
-	"}\0"
-	
-#define GLSL_PALETTE_WATER_FRAGMENT_SHADER \
-    "uniform sampler2D tex;\n" \
-    "uniform sampler2D lighttable_tex;\n" \
-	"uniform sampler3D lookup_tex;\n" \
-    "uniform int palette[768];\n" \
-    "uniform vec4 poly_color;\n" \
-    "uniform float lighting;\n" \
-    "uniform float leveltime;\n" \
-	"const float freq = 0.025;\n" \
-    "const float amp = 0.025;\n" \
-    "const float speed = 2.0;\n" \
-    "const float pi = 3.14159;\n" \
-    GLSL_DOOM_COLORMAP_floors \
-    "void main(void) {\n" \
-        "float z = (gl_FragCoord.z / gl_FragCoord.w) / 2.0;\n" \
-        "float a = -pi * (z * freq) + (leveltime * speed);\n" \
-        "float sdistort = sin(a) * amp;\n" \
-        "float cdistort = cos(a) * amp;\n" \
-        "vec4 texel = texture2D(tex, vec2(gl_TexCoord[0].s - sdistort, gl_TexCoord[0].t - cdistort));\n" \
-        "int tex_pal_idx = int(texture3D(lookup_tex, vec3((texel * 63.0 + 0.5) / 64.0))[0] * 255.0);\n" \
-        "int light_y = int(clamp(floor(R_DoomColormap(lighting, z)), 0.0, 31.0));\n" \
-        "vec2 lighttable_coord = vec2((float(tex_pal_idx) + 0.5) / 256.0, (float(light_y) + 0.5) / 32.0);\n" \
-        "int final_idx = int(texture2D(lighttable_tex, lighttable_coord)[0] * 255.0);\n" \
-		"vec4 final_color = vec4(float(palette[final_idx*3])/255.0, float(palette[final_idx*3+1])/255.0, float(palette[final_idx*3+2])/255.0, 1.0);\n" \
-        "final_color.a = texel.a * poly_color.a;\n" \
-        "gl_FragColor = final_color;\n" \
-    "}\0"
-
-//
-// Fog block shader
-//
-// Alpha of the planes themselves are still slightly off -- see HWR_FogBlockAlpha
-//
-
-#define GLSL_FOG_FRAGMENT_SHADER \
-	"uniform vec4 tint_color;\n" \
-	"uniform vec4 fade_color;\n" \
-	"uniform float lighting;\n" \
-	"uniform float fade_start;\n" \
-	"uniform float fade_end;\n" \
-	GLSL_DOOM_COLORMAP_floors \
-	GLSL_DOOM_LIGHT_EQUATION \
-	"void main(void) {\n" \
-		"vec4 base_color = gl_Color;\n" \
-		"vec4 final_color = base_color;\n" \
-		GLSL_SOFTWARE_TINT_EQUATION \
-		GLSL_SOFTWARE_FADE_EQUATION \
-		"gl_FragColor = final_color;\n" \
-	"}\0"
-	
-//
-// Palette color quantization shader
-//
-
-#define GLSL_PALETTE_FRAGMENT_SHADER \
-	"uniform sampler2D tex;\n" \
-	"uniform sampler3D lookup_tex;\n" \
-	"uniform int palette[768];\n" \
-	"void main(void) {\n" \
-		"vec3 texel = vec3(texture2D(tex, gl_TexCoord[0].st));\n" \
-		"int pal_idx = int(texture3D(lookup_tex, vec3((63.0/64.0) * texel + 1.0 / 128.0))[0] * 255.0);\n" \
-		"gl_FragColor = vec4(float(palette[pal_idx*3])/255.0, float(palette[pal_idx*3+1])/255.0, float(palette[pal_idx*3+2])/255.0, 1.0);\n" \
-	"}\0"
-
-//
-// Sky fragment shader
-//
-
-#define GLSL_SKY_FRAGMENT_SHADER \
-	"uniform sampler2D tex;\n" \
-	"void main(void) {\n" \
-		"gl_FragColor = texture2D(tex, gl_TexCoord[0].st);\n" \
-	"}\0" \
-
-// ================
-//  Shader sources
-// ================
-static struct {
-	const char *vertex;
-	const char *fragment;
-} const gl_shadersources[] = {
-	
-	// Floor fragment shader
-	GLSL_SOFTWARE_FRAGMENT_SHADER_FLOORS,
-
-	// Default shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_DEFAULT_FRAGMENT_SHADER},
-
-	// Wall fragment shader
-	GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS,
-	
-	// Floor shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER},
-
-	// Sprite fragment shader
-	GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS,
-	
-	// Wall shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER},
-
-	// Model fragment shader
-	GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS,
-	
-	// Sprite shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER},
-
-	// Model shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER},
-
-	// Water shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_WATER_FRAGMENT_SHADER},
-
-	// Fog shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_FOG_FRAGMENT_SHADER},
-
-	// Palette fragment shader
-	GLSL_PALETTE_FRAGMENT_SHADER,
-	
-	// Palette floor fudge shader
-	GLSL_SOFTWARE_PAL_FRAGMENT_SHADER_FLOORS,
-
-	// Palette wall fudge shader
-	GLSL_SOFTWARE_PAL_FRAGMENT_SHADER_WALLS,
-
-	// Palette water shader
-	GLSL_PALETTE_WATER_FRAGMENT_SHADER,
-	
-	// Sky shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SKY_FRAGMENT_SHADER},
-
-	NULL,
-};
 
 #endif	// GL_SHADERS
 
@@ -1073,62 +763,75 @@ void SetupGLFunc4(void)
 #endif
 }
 
-// jimita
-EXPORT boolean HWRAPI(CompileShaders) (void)
+EXPORT boolean HWRAPI(InitShaders) (void)
 {
 #ifdef GL_SHADERS
-	GLint i;
-
 	if (!pglUseProgram)
 		return false;
+	
+	gl_fallback_shader.vertex_shader = Z_StrDup(GLSL_FALLBACK_VERTEX_SHADER);
+	gl_fallback_shader.fragment_shader = Z_StrDup(GLSL_FALLBACK_FRAGMENT_SHADER);
 
-	gl_customshaders[SHADER_DEFAULT].vertex = NULL;
-	gl_customshaders[SHADER_DEFAULT].fragment = NULL;
-
-	for (i = 0; gl_shadersources[i].vertex && gl_shadersources[i].fragment; i++)
+	if (!Shader_CompileProgram(&gl_fallback_shader, -1))
 	{
-		gl_shader_t *shader, *usershader;
-		const GLchar *vert_shader = gl_shadersources[i].vertex;
-		const GLchar *frag_shader = gl_shadersources[i].fragment;
-
-		if (i >= HWR_MAXSHADERS)
-			break;
-
-		shader = &gl_shaders[i];
-		usershader = &gl_usershaders[i];
-
-		if (shader->program)
-			pglDeleteProgram(shader->program);
-		if (usershader->program)
-			pglDeleteProgram(usershader->program);
-
-		shader->program = 0;
-		usershader->program = 0;
-
-		if (!Shader_CompileProgram(shader, i, vert_shader, frag_shader))
-			shader->program = 0;
-
-		// Compile custom shader
-		if ((i == SHADER_DEFAULT) || !(gl_customshaders[i].vertex || gl_customshaders[i].fragment))
-			continue;
-
-		// 18032019
-		if (cv_grusecustomshaders.value && gl_customshaders[i].vertex)
-			vert_shader = gl_customshaders[i].vertex;
-		if (cv_grusecustomshaders.value && gl_customshaders[i].fragment)
-			frag_shader = gl_customshaders[i].fragment;
-
-		if (!Shader_CompileProgram(usershader, i, vert_shader, frag_shader))
-		{
-			GL_MSG_Warning("CompileShaders: Could not compile custom shader program for %s\n", HWR_GetShaderName(i));
-			usershader->program = 0;
-		}
+		GL_MSG_Error("Failed to compile the fallback shader program!\n");
+		return false;
 	}
-
-	SetShader(SHADER_DEFAULT);
 
 	return true;
 #else
+	return false;
+#endif
+}
+
+EXPORT void HWRAPI(LoadShader) (int slot, char *code, hwdshaderstage_t stage)
+{
+#ifdef GL_SHADERS
+	gl_shader_t *shader;
+
+	if (slot < 0 || slot >= HWR_MAXSHADERS)
+		I_Error("LoadShader: Invalid slot %d", slot);
+
+	shader = &gl_shaders[slot];
+
+#define LOADSHADER(source) { \
+	if (shader->source) \
+		Z_Free(shader->source); \
+	shader->source = code; \
+	}
+
+	if (stage == HWD_SHADERSTAGE_VERTEX)
+		LOADSHADER(vertex_shader)
+	else if (stage == HWD_SHADERSTAGE_FRAGMENT)
+		LOADSHADER(fragment_shader)
+	else
+		I_Error("LoadShader: invalid shader stage");
+
+#undef LOADSHADER
+#else
+	(void)slot;
+	(void)code;
+	(void)stage;
+#endif
+}
+
+EXPORT boolean HWRAPI(CompileShader) (int slot)
+{
+#ifdef GL_SHADERS
+	if (slot < 0 || slot >= HWR_MAXSHADERS)
+		I_Error("CompileShader: Invalid slot %d", slot);
+
+	if (Shader_CompileProgram(&gl_shaders[slot], slot))
+	{
+		return true;
+	}
+	else
+	{
+		gl_shaders[slot].program = 0;
+		return false;
+	}
+#else
+	(void)slot;
 	return false;
 #endif
 }
@@ -1144,7 +847,7 @@ EXPORT void HWRAPI(SetShaderInfo) (hwdshaderinfo_t info, INT32 value)
 	switch (info)
 	{
 		case HWD_SHADERINFO_LEVELTIME:
-			shader_leveltime = (((float)(value-1)) + FIXED_TO_FLOAT(rendertimefrac)) / TICRATE;
+			shader_leveltime = value;
 			break;
 		default:
 			break;
@@ -1155,85 +858,34 @@ EXPORT void HWRAPI(SetShaderInfo) (hwdshaderinfo_t info, INT32 value)
 #endif
 }
 
-//
-// Custom shader loading
-//
-EXPORT void HWRAPI(LoadCustomShader) (int number, char *code, size_t size, boolean isfragment)
-{
-#ifdef GL_SHADERS
-	shadersource_t *shader;
-
-	if (!pglUseProgram)
-		return;
-	
-	if (HWR_ShouldUsePaletteRendering())
-		InitPalette(0, false);
-
-	if (number < 1 || number > HWR_MAXSHADERS)
-		I_Error("LoadCustomShader: cannot load shader %d (min 1, max %d)", number, HWR_MAXSHADERS);
-	else if (code == NULL)
-		I_Error("LoadCustomShader: empty shader");
-
-	shader = &gl_customshaders[number];
-
-#define COPYSHADER(source) { \
-	if (shader->source) \
-		free(shader->source); \
-	shader->source = malloc(size+1); \
-	strncpy(shader->source, code, size); \
-	shader->source[size] = 0; \
-	}
-
-	if (isfragment)
-		COPYSHADER(fragment)
-	else
-		COPYSHADER(vertex)
-
-#else
-	(void)number;
-	(void)shader;
-	(void)size;
-	(void)fragment;
-#endif
-}
-
-EXPORT void HWRAPI(SetShader) (int type)
+EXPORT void HWRAPI(SetShader) (int slot)
 {
 #ifdef GL_SHADERS
 	if (gl_allowshaders)
 	{
-		gl_shader_t *shader = gl_shaderstate.current;
+		gl_shader_t *next_shader = &gl_shaders[slot]; // the gl_shader_t we are going to switch to
 
-		if ((shader == NULL) || (GLuint)type != gl_shaderstate.type)
+		if (!next_shader->program)
+			next_shader = &gl_fallback_shader; // unusable shader, use fallback instead
+
+		// update gl_shaderstate if an actual shader switch is needed
+		if (gl_shaderstate.current != next_shader)
 		{
-			gl_shader_t *baseshader = &gl_shaders[type];
-			gl_shader_t *usershader = &gl_usershaders[type];
-
-			if (usershader->program)
-				shader = (gl_allowshaders == HWD_SHADEROPTION_NOCUSTOM) ? baseshader : usershader;
-			else
-				shader = baseshader;
-
-			gl_shaderstate.current = shader;
-			gl_shaderstate.type = type;
+			gl_shaderstate.current = next_shader;
+			gl_shaderstate.program = next_shader->program;
+			gl_shaderstate.type = slot;
 			gl_shaderstate.changed = true;
 		}
 
-		if (gl_shaderstate.program != shader->program)
-		{
-			gl_shaderstate.program = shader->program;
-			gl_shaderstate.changed = true;
-		}
+		gl_shadersenabled = true;
 
-		gl_shadersenabled = (shader->program != 0);
 		return;
 	}
 #else
-	(void)type;
+	(void)slot;
 #endif
 	gl_shadersenabled = false;
 }
-
 
 EXPORT void HWRAPI(UnSetShader) (void)
 {
@@ -1249,24 +901,6 @@ EXPORT void HWRAPI(UnSetShader) (void)
 	gl_shadersenabled = false;
 }
 
-EXPORT void HWRAPI(CleanShaders) (void)
-{
-	INT32 i;
-
-	for (i = 1; i < HWR_MAXSHADERS; i++)
-	{
-		shadersource_t *shader = &gl_customshaders[i];
-
-		if (shader->vertex)
-			free(shader->vertex);
-
-		if (shader->fragment)
-			free(shader->fragment);
-
-		shader->vertex = NULL;
-		shader->fragment = NULL;
-	}
-}
 
 GLuint palette_tex_num;
 // length of one side of lookup texture
@@ -2286,70 +1920,92 @@ static void Shader_SetUniforms(FSurfaceInfo *Surface, GLRGBAFloat *poly, GLRGBAF
 #endif
 }
 
-static boolean Shader_CompileProgram(gl_shader_t *shader, GLint i, const GLchar *vert_shader, const GLchar *frag_shader)
+static boolean Shader_CompileProgram(gl_shader_t *shader, GLint i)
 {
-	GLuint gl_vertShader, gl_fragShader;
+	GLuint gl_vertShader = 0;
+	GLuint gl_fragShader = 0;
 	GLint result;
+	const GLchar *vert_shader = shader->vertex_shader;
+	const GLchar *frag_shader = shader->fragment_shader;
 
-	//
-	// Load and compile vertex shader
-	//
-	gl_vertShader = pglCreateShader(GL_VERTEX_SHADER);
-	if (!gl_vertShader)
+	if (shader->program)
+		pglDeleteProgram(shader->program);
+
+	if (!vert_shader && !frag_shader)
 	{
-		GL_MSG_Error("Shader_CompileProgram: Error creating vertex shader %s\n", HWR_GetShaderName(i));
+		GL_MSG_Error("Shader_CompileProgram: Missing shaders for shader program %s\n", HWR_GetShaderName(i));
 		return false;
 	}
 
-	pglShaderSource(gl_vertShader, 1, &vert_shader, NULL);
-	pglCompileShader(gl_vertShader);
-
-	// check for compile errors
-	pglGetShaderiv(gl_vertShader, GL_COMPILE_STATUS, &result);
-	if (result == GL_FALSE)
+	if (vert_shader)
 	{
-		Shader_CompileError("Error compiling vertex shader", gl_vertShader, i);
-		pglDeleteShader(gl_vertShader);
-		return false;
+		//
+		// Load and compile vertex shader
+		//
+		gl_vertShader = pglCreateShader(GL_VERTEX_SHADER);
+		if (!gl_vertShader)
+		{
+			GL_MSG_Error("Shader_CompileProgram: Error creating vertex shader %s\n", HWR_GetShaderName(i));
+			return false;
+		}
+
+		pglShaderSource(gl_vertShader, 1, &vert_shader, NULL);
+		pglCompileShader(gl_vertShader);
+
+		// check for compile errors
+		pglGetShaderiv(gl_vertShader, GL_COMPILE_STATUS, &result);
+		if (result == GL_FALSE)
+		{
+			Shader_CompileError("Error compiling vertex shader", gl_vertShader, i);
+			pglDeleteShader(gl_vertShader);
+			return false;
+		}
 	}
 
-	//
-	// Load and compile fragment shader
-	//
-	gl_fragShader = pglCreateShader(GL_FRAGMENT_SHADER);
-	if (!gl_fragShader)
+	if (frag_shader)
 	{
-		GL_MSG_Error("Shader_CompileProgram: Error creating fragment shader %s\n", HWR_GetShaderName(i));
-		pglDeleteShader(gl_vertShader);
-		pglDeleteShader(gl_fragShader);
-		return false;
-	}
+		//
+		// Load and compile fragment shader
+		//
+		gl_fragShader = pglCreateShader(GL_FRAGMENT_SHADER);
+		if (!gl_fragShader)
+		{
+			GL_MSG_Error("Shader_CompileProgram: Error creating fragment shader %s\n", HWR_GetShaderName(i));
+			pglDeleteShader(gl_vertShader);
+			pglDeleteShader(gl_fragShader);
+			return false;
+		}
 
-	pglShaderSource(gl_fragShader, 1, &frag_shader, NULL);
-	pglCompileShader(gl_fragShader);
+		pglShaderSource(gl_fragShader, 1, &frag_shader, NULL);
+		pglCompileShader(gl_fragShader);
 
-	// check for compile errors
-	pglGetShaderiv(gl_fragShader, GL_COMPILE_STATUS, &result);
-	if (result == GL_FALSE)
-	{
-		Shader_CompileError("Error compiling fragment shader", gl_fragShader, i);
-		pglDeleteShader(gl_vertShader);
-		pglDeleteShader(gl_fragShader);
-		return false;
+		// check for compile errors
+		pglGetShaderiv(gl_fragShader, GL_COMPILE_STATUS, &result);
+		if (result == GL_FALSE)
+		{
+			Shader_CompileError("Error compiling fragment shader", gl_fragShader, i);
+			pglDeleteShader(gl_vertShader);
+			pglDeleteShader(gl_fragShader);
+			return false;
+		}
 	}
 
 	shader->program = pglCreateProgram();
-	pglAttachShader(shader->program, gl_vertShader);
-	pglAttachShader(shader->program, gl_fragShader);
+	if (vert_shader)
+		pglAttachShader(shader->program, gl_vertShader);
+	if (frag_shader)
+		pglAttachShader(shader->program, gl_fragShader);
 	pglLinkProgram(shader->program);
 
 	// check link status
 	pglGetProgramiv(shader->program, GL_LINK_STATUS, &result);
 
 	// delete the shader objects
-	pglDeleteShader(gl_vertShader);
-	pglDeleteShader(gl_fragShader);
-
+	if (vert_shader)
+		pglDeleteShader(gl_vertShader);
+	if (frag_shader)
+		pglDeleteShader(gl_fragShader);
+	
 	// couldn't link?
 	if (result != GL_TRUE)
 	{
@@ -2929,6 +2585,7 @@ EXPORT void HWRAPI(DrawPolygon) (FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUI
 		polygonArray[polygonArraySize].polyFlags = PolyFlags;
 		polygonArray[polygonArraySize].texNum = tex_downloaded;
 		polygonArray[polygonArraySize].shader = gl_currentshaderprogram;
+		//polygonArray[polygonArraySize].shader = (shader_target != -1) ? HWR_GetShaderFromTarget(shader_target) : shader_target;
 		polygonArray[polygonArraySize].horizonSpecial = horizonSpecial;
 		polygonArraySize++;
 
