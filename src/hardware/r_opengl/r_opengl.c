@@ -621,8 +621,8 @@ static PFNglUniform3fv pglUniform3fv;
 static PFNglGetUniformLocation pglGetUniformLocation;
 
 // 18032019
-static boolean gl_allowshaders = false;
 static boolean gl_shadersenabled = false;
+static INT32 gl_allowshaders = 0;
 
 static boolean gl_batching = false;// are we currently collecting batches?
 
@@ -2969,7 +2969,7 @@ EXPORT void HWRAPI(SetSpecialState) (hwdspecialstate_t IdState, INT32 Value)
 	{
 		case HWD_SET_SHADERS:
 			switch (Value)
-			gl_allowshaders = (hwdshaderoption_t)Value;
+			gl_allowshaders = Value;
 			break;
 
 		case HWD_SET_TEXTUREFILTERMODE:
