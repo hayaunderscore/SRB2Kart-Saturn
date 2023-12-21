@@ -184,6 +184,7 @@ static void CV_grshaders_OnChange(void)
 	{
 		if (HWR_ShouldUsePaletteRendering())
 		{
+			HWR_CompileShaders();
 			InitPalette(0, false);	
 		}
 		
@@ -196,7 +197,7 @@ static void CV_useCustomShaders_ONChange(void)
 	if (rendermode == render_opengl)
 	{
 		if (HWR_UseShader())
-			HWD.pfnCompileShaders();
+			HWR_CompileShaders();
 	}
 }
 
@@ -902,10 +903,8 @@ void HWR_RenderPlane(subsector_t *subsector, extrasubsector_t *xsub, boolean isc
 		if (PolyFlags & PF_Fog)
 			HWD.pfnSetShader(SHADER_FOG);	// fog shader
 		else if (PolyFlags & PF_Ripple)
-			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 11 : 5); // water shader
 			HWD.pfnSetShader(SHADER_WATER);	// water shader
 		else
-			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 9 : 1);	// floor shader
 			HWD.pfnSetShader(SHADER_FLOOR);	// floor shader
 		
 		PolyFlags |= PF_ColorMapped;
@@ -1065,7 +1064,6 @@ static void HWR_DrawSegsSplats(FSurfaceInfo * pSurf)
 
 		if (HWR_UseShader())
 		{
-			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 2);	// wall shader
 			HWD.pfnSetShader(SHADER_WALL);	// wall shader
 		}
 
@@ -1106,7 +1104,6 @@ void HWR_ProjectWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend
 
 	if (HWR_UseShader())
 	{
-		HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 2);	// wall shader
 		HWD.pfnSetShader(SHADER_WALL);	// wall shader
 		blendmode |= PF_ColorMapped;
 	}
@@ -3513,7 +3510,6 @@ void HWR_RenderPolyObjectPlane(polyobj_t *polysector, boolean isceiling, fixed_t
 
 	if (HWR_UseShader())
 	{		
-		HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 9 : 1);	// floor shader
 		HWD.pfnSetShader(SHADER_FLOOR);		// floor shader
 		blendmode |= PF_ColorMapped;
 	}
@@ -4331,7 +4327,6 @@ static void HWR_DrawSpriteShadow(gr_vissprite_t *spr, GLPatch_t *gpatch, float t
 		
 		if (HWR_UseShader())
 		{
-			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 9 : 1);	// floor shader
 			HWD.pfnSetShader(SHADER_FLOOR);	// floor shader
 		}
 
@@ -4706,7 +4701,6 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 		
 		if (HWR_UseShader())
 		{
-			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 3);	// sprite shader
 			HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
 			blend |= PF_ColorMapped;
 		}
@@ -4752,7 +4746,6 @@ static void HWR_SplitSprite(gr_vissprite_t *spr)
 
 	if (HWR_UseShader())
 	{
-		HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 3);	// sprite shader
 		HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
 		blend |= PF_ColorMapped;
 	}
@@ -4911,7 +4904,6 @@ static void HWR_DrawSprite(gr_vissprite_t *spr)
 
 		if (HWR_UseShader())
 		{
-			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 3);	// sprite shader
 			HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
 			blend |= PF_ColorMapped;
 		}
@@ -5012,7 +5004,6 @@ static inline void HWR_DrawPrecipitationSprite(gr_vissprite_t *spr)
 
 	if (HWR_UseShader())
 	{
-		HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 3);	// sprite shader
 		HWD.pfnSetShader(SHADER_SPRITE);	// sprite shader
 		blend |= PF_ColorMapped;
 	}
@@ -6698,7 +6689,6 @@ void HWR_RenderWall(FOutVector *wallVerts, FSurfaceInfo *pSurf, FBITFIELD blend,
 	{
 		if (HWR_UseShader())
 		{
-			HWD.pfnSetShader(HWR_ShouldUsePaletteRendering() ? 10 : 2);	// wall shader
 			HWD.pfnSetShader(SHADER_WALL);	// wall shader
 			blendmode |= PF_ColorMapped;
 		}
@@ -6867,6 +6857,15 @@ void HWR_MakeScreenFinalTexture(void)
 
 void HWR_DrawScreenFinalTexture(int width, int height)
 {
-    HWD.pfnDrawScreenFinalTexture(width, height);
+	if (HWR_ShouldUsePaletteRendering())
+	{
+		HWD.pfnSetSpecialState(HWD_SET_SHADERS, 1);
+		HWD.pfnSetShader(HWR_GetShaderFromTarget(SHADER_PALETTE_POSTPROCESS));
+		HWD.pfnDrawScreenFinalTexture(width, height);
+		HWD.pfnUnSetShader();
+		HWD.pfnSetSpecialState(HWD_SET_SHADERS, 0);
+	}
+	else
+		HWD.pfnDrawScreenFinalTexture(width, height);
 }
 #endif // HWRENDER

@@ -683,7 +683,6 @@ static float shader_leveltime = 0;
 
 // Lactozilla: Shader functions
 static boolean Shader_CompileProgram(gl_shader_t *shader, GLint i);
-static void Shader_CompileError(const char *message, GLuint program, INT32 shadernum);
 static void Shader_SetUniforms(FSurfaceInfo *Surface, GLRGBAFloat *poly, GLRGBAFloat *tint, GLRGBAFloat *fade);
 
 static GLRGBAFloat shader_defaultcolor = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -995,21 +994,21 @@ void InitPalette(int flashnum, boolean skiplut)
 	}
 #undef STEP_SIZE
 	
-	pglUseProgram(gl_shaderprograms[8].program);
-	pglUniform1i(gl_shaderprograms[8].uniforms[gluniform_color_lookup], 1); // bind sampler to second texture unit
-	pglUniform1iv(gl_shaderprograms[8].uniforms[gluniform_palette], 768, gl_palette);
+	pglUseProgram(gl_shaders[8].program);
+	pglUniform1i(gl_shaders[8].uniforms[gluniform_color_lookup], 1); // bind sampler to second texture unit
+	pglUniform1iv(gl_shaders[8].uniforms[gluniform_palette], 768, gl_palette);
 	// bind the palette to the fancy shader here
-	pglUseProgram(gl_shaderprograms[9].program);
-	pglUniform1iv(gl_shaderprograms[9].uniforms[gluniform_palette], 768, gl_palette);
+	pglUseProgram(gl_shaders[9].program);
+	pglUniform1iv(gl_shaders[9].uniforms[gluniform_palette], 768, gl_palette);
 	// bind tex unit 2 to lighttable tex
-	pglUniform1i(gl_shaderprograms[9].uniforms[gluniform_lighttable_tex], 2);
-	pglUniform1i(gl_shaderprograms[9].uniforms[gluniform_color_lookup], 1);
+	pglUniform1i(gl_shaders[9].uniforms[gluniform_lighttable_tex], 2);
+	pglUniform1i(gl_shaders[9].uniforms[gluniform_color_lookup], 1);
 	// bind the palette to the fancy shader here
-	pglUseProgram(gl_shaderprograms[10].program);
-	pglUniform1iv(gl_shaderprograms[10].uniforms[gluniform_palette], 768, gl_palette);
+	pglUseProgram(gl_shaders[10].program);
+	pglUniform1iv(gl_shaders[10].uniforms[gluniform_palette], 768, gl_palette);
 	// bind tex unit 2 to lighttable tex
-	pglUniform1i(gl_shaderprograms[10].uniforms[gluniform_lighttable_tex], 2);
-	pglUniform1i(gl_shaderprograms[10].uniforms[gluniform_color_lookup], 1);
+	pglUniform1i(gl_shaders[10].uniforms[gluniform_lighttable_tex], 2);
+	pglUniform1i(gl_shaders[10].uniforms[gluniform_color_lookup], 1);
 	pglUseProgram(0);
 	pglBindTexture(GL_TEXTURE_3D, 0);
 
@@ -1956,7 +1955,7 @@ static boolean Shader_CompileProgram(gl_shader_t *shader, GLint i)
 		pglGetShaderiv(gl_vertShader, GL_COMPILE_STATUS, &result);
 		if (result == GL_FALSE)
 		{
-			Shader_CompileError("Error compiling vertex shader", gl_vertShader, i);
+			GL_MSG_Error("Error compiling vertex shader", gl_vertShader, i);
 			pglDeleteShader(gl_vertShader);
 			return false;
 		}
@@ -1983,7 +1982,7 @@ static boolean Shader_CompileProgram(gl_shader_t *shader, GLint i)
 		pglGetShaderiv(gl_fragShader, GL_COMPILE_STATUS, &result);
 		if (result == GL_FALSE)
 		{
-			Shader_CompileError("Error compiling fragment shader", gl_fragShader, i);
+			GL_MSG_Error("Error compiling fragment shader", gl_fragShader, i);
 			pglDeleteShader(gl_vertShader);
 			pglDeleteShader(gl_fragShader);
 			return false;
@@ -2233,8 +2232,7 @@ EXPORT void HWRAPI(RenderBatches) (precise_t *sSortTime, precise_t *sDrawTime, i
 
 	// set state for first batch
 	//CONS_Printf("set first state\n");
-	gl_currentshaderprogram = currentShader;
-	gl_shaderprogramchanged = true;
+
 	if (currentPolyFlags & PF_Modulated)
 	{
 		// Poly color
@@ -2445,8 +2443,7 @@ EXPORT void HWRAPI(RenderBatches) (precise_t *sSortTime, precise_t *sDrawTime, i
 			GLRGBAFloat poly = {0,0,0,0};
 			GLRGBAFloat tint = {0,0,0,0};
 			GLRGBAFloat fade = {0,0,0,0};
-			gl_currentshaderprogram = nextShader;
-			gl_shaderprogramchanged = true;
+
 			if (nextPolyFlags & PF_Modulated)
 			{
 				// Poly color
@@ -2495,7 +2492,7 @@ EXPORT void HWRAPI(RenderBatches) (precise_t *sSortTime, precise_t *sDrawTime, i
 			GLRGBAFloat poly = {0,0,0,0};
 			GLRGBAFloat tint = {0,0,0,0};
 			GLRGBAFloat fade = {0,0,0,0};
-			gl_shaderprogramchanged = false;
+
 			if (nextPolyFlags & PF_Modulated)
 			{
 				// Poly color
@@ -2547,6 +2544,8 @@ EXPORT void HWRAPI(RenderBatches) (precise_t *sSortTime, precise_t *sDrawTime, i
 // -----------------+
 EXPORT void HWRAPI(DrawPolygon) (FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUINT iNumPts, FBITFIELD PolyFlags, boolean horizonSpecial)
 {
+	int shader_target;
+	
 	if (gl_batching)
 	{
 		//CONS_Printf("Batched DrawPolygon\n");
@@ -2584,8 +2583,8 @@ EXPORT void HWRAPI(DrawPolygon) (FSurfaceInfo *pSurf, FOutVector *pOutVerts, FUI
 		polygonArray[polygonArraySize].numVerts = iNumPts;
 		polygonArray[polygonArraySize].polyFlags = PolyFlags;
 		polygonArray[polygonArraySize].texNum = tex_downloaded;
-		polygonArray[polygonArraySize].shader = gl_currentshaderprogram;
-		//polygonArray[polygonArraySize].shader = (shader_target != -1) ? HWR_GetShaderFromTarget(shader_target) : shader_target;
+		//polygonArray[polygonArraySize].shader = gl_currentshaderprogram;
+		polygonArray[polygonArraySize].shader = (shader_target != -1) ? HWR_GetShaderFromTarget(shader_target) : shader_target;
 		polygonArray[polygonArraySize].horizonSpecial = horizonSpecial;
 		polygonArraySize++;
 
@@ -4158,14 +4157,6 @@ EXPORT void HWRAPI(DrawScreenFinalTexture)(int width, int height)
 	ClearBuffer(true, false, false, &clearColour);
 	pglBindTexture(GL_TEXTURE_2D, finalScreenTexture);
 
-	if (HWR_ShouldUsePaletteRendering())
-	{
-		Shader_SetUniforms(NULL, NULL, NULL, NULL); // prepare shader, if it is enabled
-
-		pglUseProgram(gl_shaderprograms[8].program); // palette shader
-		pglActiveTexture(GL_TEXTURE1);
-	}
-
 	pglColor4ubv(white);
 	pglTexCoordPointer(2, GL_FLOAT, 0, fix);
 	pglVertexPointer(3, GL_FLOAT, 0, off);
@@ -4173,12 +4164,7 @@ EXPORT void HWRAPI(DrawScreenFinalTexture)(int width, int height)
 	pglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
 	tex_downloaded = finalScreenTexture;
-	
-	if (HWR_ShouldUsePaletteRendering())
-	{
-		pglUseProgram(0);
-		pglActiveTexture(GL_TEXTURE0);
-	}
+
 }
 
 #endif //HWRENDER

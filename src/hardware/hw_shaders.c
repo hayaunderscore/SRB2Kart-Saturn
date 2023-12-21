@@ -11,6 +11,7 @@
 
 #ifdef HWRENDER
 
+#include "hw_main.h"
 #include "hw_glob.h"
 #include "hw_drv.h"
 #include "../z_zone.h"
@@ -51,6 +52,7 @@
 // Software fragment shader
 //
 
+// Include GLSL_FLOOR_FUDGES or GLSL_WALL_FUDGES or define the fudges in shaders that use this macro.
 #define GLSL_DOOM_COLORMAP \
 	"float R_DoomColormap(float light, float z)\n" \
 	"{\n" \
@@ -58,31 +60,12 @@
 		"float lightz = clamp(z / 16.0, 0.0, 127.0);\n" \
 		"float startmap = (15.0 - lightnum) * 4.0;\n" \
 		"float scale = 160.0 / (lightz + 1.0);\n" \
-		"return startmap - scale * 0.5;\n" \
-	"}\n"
-
-#define GLSL_DOOM_COLORMAP_walls \
-	"float R_DoomColormap(float light, float z)\n" \
-	"{\n" \
-		"float lightnum = clamp(light / 17.0, 0.0, 15.0);\n" \
-		"float lightz = clamp(z / 16.0, 0.0, 127.0);\n" \
-		"float startmap = (15.0 - lightnum) * 4.0;\n" \
-		"float scale = 160.0 / (lightz + 1.0);\n" \
 		"float cap = (155.0 - light) * 0.26;\n" \
-		"return max(startmap * 1.05 - scale * 0.5 * 2.2, cap);\n" \
+		"return max(startmap * STARTMAP_FUDGE - scale * 0.5 * SCALE_FUDGE, cap);\n" \
 	"}\n"
-	
-#define GLSL_DOOM_COLORMAP_floors \
-	"float R_DoomColormap(float light, float z)\n" \
-	"{\n" \
-		"float lightnum = clamp(light / 17.0, 0.0, 15.0);\n" \
-		"float lightz = clamp(z / 16.0, 0.0, 127.0);\n" \
-		"float startmap = (15.0 - lightnum) * 4.0;\n" \
-		"float scale = 160.0 / (lightz + 1.0);\n" \
-		"float cap = (155.0 - light) * 0.26;\n" \
-		"return max(startmap * 1.06 - scale * 0.5 * 1.15, cap);\n" \
-	"}\n"
-	
+// lighting cap adjustment:
+// first num (155.0), increase to make it start to go dark sooner
+// second num (0.26), increase to make it go dark faster
 
 #define GLSL_DOOM_LIGHT_EQUATION \
 	"float R_DoomLightingEquation(float light)\n" \
@@ -111,16 +94,40 @@
 	"}\n" \
 	"final_color = mix(final_color, fade_color, darkness);\n"
 
-#define GLSL_SOFTWARE_UNIFORMS \
+
+#define GLSL_PALETTE_RENDERING \
+	"int tex_pal_idx = int(texture3D(lookup_tex, vec3((texel * 63.0 + 0.5) / 64.0))[0] * 255.0);\n" \
+	"float z = gl_FragCoord.z / gl_FragCoord.w;\n" \
+	"int light_y = int(clamp(floor(R_DoomColormap(lighting, z)), 0.0, 31.0));\n" \
+	"vec2 lighttable_coord = vec2((float(tex_pal_idx) + 0.5) / 256.0, (float(light_y) + 0.5) / 32.0);\n" \
+	"int final_idx = int(texture2D(lighttable_tex, lighttable_coord)[0] * 255.0);\n" \
+	"vec4 final_color = vec4(float(palette[final_idx*3])/255.0, float(palette[final_idx*3+1])/255.0, float(palette[final_idx*3+2])/255.0, 1.0);\n" \
+	"final_color.a = texel.a * poly_color.a;\n" \
+	"gl_FragColor = final_color;\n" \
+
+#define GLSL_SOFTWARE_FRAGMENT_SHADER \
+	"#ifdef SRB2_PALETTE_RENDERING\n" \
+	"uniform sampler2D tex;\n" \
+	"uniform sampler2D lighttable_tex;\n" \
+	"uniform sampler3D lookup_tex;\n" \
+	"uniform int palette[768];\n" \
+	"uniform vec4 poly_color;\n" \
+	"uniform float lighting;\n" \
+	GLSL_DOOM_COLORMAP \
+	"void main(void) {\n" \
+		"vec4 texel = texture2D(tex, gl_TexCoord[0].st);\n" \
+		GLSL_PALETTE_RENDERING \
+	"}\n" \
+	"#else\n" \
 	"uniform sampler2D tex;\n" \
 	"uniform vec4 poly_color;\n" \
 	"uniform vec4 tint_color;\n" \
 	"uniform vec4 fade_color;\n" \
 	"uniform float lighting;\n" \
 	"uniform float fade_start;\n" \
-	"uniform float fade_end;\n"
-
-#define GLSL_SOFTWARE_MAIN \
+	"uniform float fade_end;\n" \
+	GLSL_DOOM_COLORMAP \
+	GLSL_DOOM_LIGHT_EQUATION \
 	"void main(void) {\n" \
 		"vec4 texel = texture2D(tex, gl_TexCoord[0].st);\n" \
 		"vec4 base_color = texel * poly_color;\n" \
@@ -129,54 +136,26 @@
 		GLSL_SOFTWARE_FADE_EQUATION \
 		"final_color.a = texel.a * poly_color.a;\n" \
 		"gl_FragColor = final_color;\n" \
-	"}\n"
+	"}\n" \
+	"#endif\0"
+
+// hand tuned adjustments for light level calculation
+#define GLSL_FLOOR_FUDGES \
+	"#define STARTMAP_FUDGE 1.06\n" \
+	"#define SCALE_FUDGE 1.15\n"
+
+#define GLSL_WALL_FUDGES \
+	"#define STARTMAP_FUDGE 1.05\n" \
+	"#define SCALE_FUDGE 2.2\n"
 
 #define GLSL_SOFTWARE_FRAGMENT_SHADER_FLOORS \
-	GLSL_SOFTWARE_UNIFORMS \
-	GLSL_DOOM_COLORMAP_floors \
-	GLSL_DOOM_LIGHT_EQUATION \
-	GLSL_SOFTWARE_MAIN \
-	"\0"
+	GLSL_FLOOR_FUDGES \
+	GLSL_SOFTWARE_FRAGMENT_SHADER
 
 #define GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS \
-	GLSL_SOFTWARE_UNIFORMS \
-	GLSL_DOOM_COLORMAP_walls \
-	GLSL_DOOM_LIGHT_EQUATION \
-	GLSL_SOFTWARE_MAIN \
-	"\0"
+	GLSL_WALL_FUDGES \
+	GLSL_SOFTWARE_FRAGMENT_SHADER
 
-#define GLSL_SOFTWARE_PAL_UNIFORMS \
-	"uniform sampler2D tex;\n" \
-	"uniform sampler2D lighttable_tex;\n" \
-	"uniform sampler3D lookup_tex;\n" \
-	"uniform int palette[768];\n" \
-	"uniform vec4 poly_color;\n" \
-	"uniform float lighting;\n" \
-
-#define GLSL_SOFTWARE_PAL_MAIN \
-	"void main(void) {\n" \
-		"vec4 texel = texture2D(tex, gl_TexCoord[0].st);\n" \
-		"int tex_pal_idx = int(texture3D(lookup_tex, vec3((texel * 63.0 + 0.5) / 64.0))[0] * 255.0);\n" \
-		"float z = gl_FragCoord.z / gl_FragCoord.w;\n" \
-		"int light_y = int(clamp(floor(R_DoomColormap(lighting, z)), 0.0, 31.0));\n" \
-		"vec2 lighttable_coord = vec2((float(tex_pal_idx) + 0.5) / 256.0, (float(light_y) + 0.5) / 32.0);\n" \
-		"int final_idx = int(texture2D(lighttable_tex, lighttable_coord)[0] * 255.0);\n" \
-		"vec4 final_color = vec4(float(palette[final_idx*3])/255.0, float(palette[final_idx*3+1])/255.0, float(palette[final_idx*3+2])/255.0, 1.0);\n" \
-		"final_color.a = texel.a * poly_color.a;\n" \
-		"gl_FragColor = final_color;\n" \
-	"}\n"
-
-#define GLSL_SOFTWARE_PAL_FRAGMENT_SHADER_FLOORS \
-	GLSL_SOFTWARE_PAL_UNIFORMS \
-	GLSL_DOOM_COLORMAP_floors \
-	GLSL_SOFTWARE_PAL_MAIN \
-	"\0"
-
-#define GLSL_SOFTWARE_PAL_FRAGMENT_SHADER_WALLS \
-	GLSL_SOFTWARE_PAL_UNIFORMS \
-	GLSL_DOOM_COLORMAP_walls \
-	GLSL_SOFTWARE_PAL_MAIN \
-	"\0"
 
 //
 // Water surface shader
@@ -185,7 +164,31 @@
 // Still needs to distort things underneath/around the water...
 //
 
+#define GLSL_WATER_TEXEL \
+	"float water_z = (gl_FragCoord.z / gl_FragCoord.w) / 2.0;\n" \
+	"float a = -pi * (water_z * freq) + (leveltime * speed);\n" \
+	"float sdistort = sin(a) * amp;\n" \
+	"float cdistort = cos(a) * amp;\n" \
+	"vec4 texel = texture2D(tex, vec2(gl_TexCoord[0].s - sdistort, gl_TexCoord[0].t - cdistort));\n"
+
 #define GLSL_WATER_FRAGMENT_SHADER \
+	GLSL_FLOOR_FUDGES \
+	"const float freq = 0.025;\n" \
+	"const float amp = 0.025;\n" \
+	"const float speed = 2.0;\n" \
+	"const float pi = 3.14159;\n" \
+	"#ifdef SRB2_PALETTE_RENDERING\n" \
+	"uniform sampler2D lighttable_tex;\n" \
+	"uniform sampler3D lookup_tex;\n" \
+    "uniform int palette[768];\n" \
+	"uniform vec4 poly_color;\n" \
+	"uniform float lighting;\n" \
+	"uniform float leveltime;\n" \
+	GLSL_DOOM_COLORMAP \
+	"void main(void) {\n" \
+		GLSL_PALETTE_WATER \
+	"}\n" \
+	"#else\n" \
 	"uniform sampler2D tex;\n" \
 	"uniform vec4 poly_color;\n" \
 	"uniform vec4 tint_color;\n" \
@@ -194,39 +197,20 @@
 	"uniform float fade_start;\n" \
 	"uniform float fade_end;\n" \
 	"uniform float leveltime;\n" \
-	"const float freq = 0.025;\n" \
-	"const float amp = 0.025;\n" \
-	"const float speed = 2.0;\n" \
-	"const float pi = 3.14159;\n" \
 	GLSL_DOOM_COLORMAP \
 	GLSL_DOOM_LIGHT_EQUATION \
 	"void main(void) {\n" \
-		"float z = (gl_FragCoord.z / gl_FragCoord.w) / 2.0;\n" \
-		"float a = -pi * (z * freq) + (leveltime * speed);\n" \
-		"float sdistort = sin(a) * amp;\n" \
-		"float cdistort = cos(a) * amp;\n" \
-		"vec4 texel = texture2D(tex, vec2(gl_TexCoord[0].s - sdistort, gl_TexCoord[0].t - cdistort));\n" \
+		GLSL_WATER_TEXEL \
 		"vec4 base_color = texel * poly_color;\n" \
 		"vec4 final_color = base_color;\n" \
 		GLSL_SOFTWARE_TINT_EQUATION \
 		GLSL_SOFTWARE_FADE_EQUATION \
 		"final_color.a = texel.a * poly_color.a;\n" \
 		"gl_FragColor = final_color;\n" \
-	"}\0"
-	
-#define GLSL_PALETTE_WATER_FRAGMENT_SHADER \
-    "uniform sampler2D tex;\n" \
-    "uniform sampler2D lighttable_tex;\n" \
-	"uniform sampler3D lookup_tex;\n" \
-    "uniform int palette[768];\n" \
-    "uniform vec4 poly_color;\n" \
-    "uniform float lighting;\n" \
-    "uniform float leveltime;\n" \
-	"const float freq = 0.025;\n" \
-    "const float amp = 0.025;\n" \
-    "const float speed = 2.0;\n" \
-    "const float pi = 3.14159;\n" \
-    GLSL_DOOM_COLORMAP_floors \
+	"}\n" \
+	"#endif\0"
+
+#define GLSL_PALETTE_WATER \
     "void main(void) {\n" \
         "float z = (gl_FragCoord.z / gl_FragCoord.w) / 2.0;\n" \
         "float a = -pi * (z * freq) + (leveltime * speed);\n" \
@@ -241,7 +225,7 @@
         "final_color.a = texel.a * poly_color.a;\n" \
         "gl_FragColor = final_color;\n" \
     "}\0"
-
+    
 //
 // Fog block shader
 //
@@ -249,12 +233,13 @@
 //
 
 #define GLSL_FOG_FRAGMENT_SHADER \
+	GLSL_FLOOR_FUDGES \
 	"uniform vec4 tint_color;\n" \
 	"uniform vec4 fade_color;\n" \
 	"uniform float lighting;\n" \
 	"uniform float fade_start;\n" \
 	"uniform float fade_end;\n" \
-	GLSL_DOOM_COLORMAP_floors \
+	GLSL_DOOM_COLORMAP \
 	GLSL_DOOM_LIGHT_EQUATION \
 	"void main(void) {\n" \
 		"vec4 base_color = gl_Color;\n" \
@@ -265,10 +250,22 @@
 	"}\0"
 	
 //
-// Palette color quantization shader
+// Sky fragment shader
+// Modulates poly_color with gl_Color
 //
 
-#define GLSL_PALETTE_FRAGMENT_SHADER \
+#define GLSL_SKY_FRAGMENT_SHADER \
+	"uniform sampler2D tex;\n" \
+	"uniform vec4 poly_color;\n" \
+	"void main(void) {\n" \
+		"gl_FragColor = texture2D(tex, gl_TexCoord[0].st) * gl_Color * poly_color;\n" \
+	"}\0"
+	
+//
+// Shader for the palette rendering postprocess step
+//
+
+#define GLSL_PALETTE_POSTPROCESS_SHADER  \
 	"uniform sampler2D tex;\n" \
 	"uniform sampler3D lookup_tex;\n" \
 	"uniform int palette[768];\n" \
@@ -278,16 +275,6 @@
 		"gl_FragColor = vec4(float(palette[pal_idx*3])/255.0, float(palette[pal_idx*3+1])/255.0, float(palette[pal_idx*3+2])/255.0, 1.0);\n" \
 	"}\0"
 
-//
-// Sky fragment shader
-//
-
-#define GLSL_SKY_FRAGMENT_SHADER \
-	"uniform sampler2D tex;\n" \
-	"void main(void) {\n" \
-		"gl_FragColor = texture2D(tex, gl_TexCoord[0].st);\n" \
-	"}\0" \
-	
 
 // ================
 //  Shader sources
@@ -297,32 +284,17 @@ static struct {
 	const char *fragment;
 } const gl_shadersources[] = {
 	
-	// Floor fragment shader
-	GLSL_SOFTWARE_FRAGMENT_SHADER_FLOORS,
-
-	// Default shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_DEFAULT_FRAGMENT_SHADER},
-
-	// Wall fragment shader
-	GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS,
-	
 	// Floor shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER},
+	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER_FLOORS},
 
-	// Sprite fragment shader
-	GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS,
-	
 	// Wall shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER},
+	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS},
 
-	// Model fragment shader
-	GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS,
-	
 	// Sprite shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER},
+	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS},
 
 	// Model shader
-	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER},
+	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS},
 
 	// Water shader
 	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_WATER_FRAGMENT_SHADER},
@@ -330,22 +302,13 @@ static struct {
 	// Fog shader
 	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_FOG_FRAGMENT_SHADER},
 
-	// Palette fragment shader
-	GLSL_PALETTE_FRAGMENT_SHADER,
-	
-	// Palette floor fudge shader
-	GLSL_SOFTWARE_PAL_FRAGMENT_SHADER_FLOORS,
-
-	// Palette wall fudge shader
-	GLSL_SOFTWARE_PAL_FRAGMENT_SHADER_WALLS,
-
-	// Palette water shader
-	GLSL_PALETTE_WATER_FRAGMENT_SHADER,
-	
 	// Sky shader
 	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_SKY_FRAGMENT_SHADER},
 
-	NULL,
+	// Palette postprocess shader
+	{GLSL_DEFAULT_VERTEX_SHADER, GLSL_PALETTE_POSTPROCESS_SHADER},
+
+	{NULL, NULL},
 };
 
 typedef struct
@@ -367,6 +330,8 @@ typedef struct
 static shader_t gl_shaders[NUMSHADERTARGETS*2];
 
 static shadertarget_t gl_shadertargets[NUMSHADERTARGETS];
+
+#define PALETTE_RENDERING_DEFINE "#define SRB2_PALETTE_RENDERING"
 
 // Initialize shader variables and the backend's shader system. Load the base shaders.
 // Returns false if shaders cannot be used.
@@ -538,6 +503,9 @@ static char *HWR_PreprocessShader(char *original)
 
 	// Calculate length of modified shader.
 	new_len = original_len;
+	
+	if (cv_grpaletteshader.value)
+		new_len += sizeof(PALETTE_RENDERING_DEFINE) - 1 + 2 * line_ending_len;
 
 	// Allocate memory for modified shader.
 	new_shader = Z_Malloc(new_len + 1, PU_STATIC, NULL);
@@ -549,6 +517,21 @@ static char *HWR_PreprocessShader(char *original)
 	M_Memcpy(write_pos, original, insertion_pos);
 	read_pos += insertion_pos;
 	write_pos += insertion_pos;
+
+#define WRITE_DEFINE(define) \
+	{ \
+		strcpy(write_pos, line_ending); \
+		write_pos += line_ending_len; \
+		strcpy(write_pos, define); \
+		write_pos += sizeof(define) - 1; \
+		strcpy(write_pos, line_ending); \
+		write_pos += line_ending_len; \
+	}
+
+	if (cv_grpaletteshader.value)
+		WRITE_DEFINE(PALETTE_RENDERING_DEFINE)
+
+#undef WRITE_DEFINE
 
 	// Copy the part after our additions.
 	M_Memcpy(write_pos, read_pos, original_len - insertion_pos);
@@ -610,7 +593,7 @@ int HWR_GetShaderFromTarget(int shader_target)
 	// - custom shaders are enabled
 	// - custom shaders are allowed by the server
 	if (custom_shader != -1 && gl_shaders[custom_shader].compiled &&
-		cv_glshaders.value == 1 && cv_glallowshaders.value)
+		cv_grshaders.value)
 		return custom_shader;
 	else
 		return gl_shadertargets[shader_target].base_shader;
@@ -634,9 +617,11 @@ customshaderxlat_t shaderxlat[] =
 	{"Flat", SHADER_FLOOR},
 	{"WallTexture", SHADER_WALL},
 	{"Sprite", SHADER_SPRITE},
+	{"MODEL", SHADER_MODEL},
 	{"WaterRipple", SHADER_WATER},
 	{"Fog", SHADER_FOG},
 	{"Sky", SHADER_SKY},
+	{"PalettePostprocess", SHADER_PALETTE_POSTPROCESS},
 	{NULL, 0},
 };
 
@@ -661,7 +646,7 @@ void HWR_LoadCustomShadersFromFile(UINT16 wadnum, boolean PK3)
 	int i;
 	boolean modified_shaders[NUMSHADERTARGETS] = {0};
 
-	if (!gl_shadersavailable)
+	if (!HWR_UseShader())
 		return;
 
 	lump = HWR_FindShaderDefs(wadnum);
@@ -819,18 +804,13 @@ const char *HWR_GetShaderName(INT32 shader)
 {
 	INT32 i;
 
-	if (shader)
+	for (i = 0; shaderxlat[i].type; i++)
 	{
-		for (i = 0; shaderxlat[i].type; i++)
-		{
-			if (shaderxlat[i].id == shader)
-				return shaderxlat[i].type;
-		}
-
-		return "Unknown";
+		if (shaderxlat[i].id == shader)
+			return shaderxlat[i].type;
 	}
 
-	return "Default";
+	return "Unknown";
 }
 
 #endif // HWRENDER

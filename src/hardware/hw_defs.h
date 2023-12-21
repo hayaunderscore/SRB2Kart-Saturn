@@ -166,10 +166,12 @@ enum
 {
 	SHADER_FLOOR,
 	SHADER_WALL,
+	SHADER_MODEL,
 	SHADER_SPRITE,
 	SHADER_WATER,
 	SHADER_FOG,
 	SHADER_SKY,
+	SHADER_PALETTE_POSTPROCESS,
 
 	NUMSHADERTARGETS,
 };
@@ -307,15 +309,6 @@ enum hwdportalstate
 
 #define GL_DEFAULTMIX 0x00000000
 #define GL_DEFAULTFOG 0xFF000000
-
-// Lactozilla: Shader info
-// Generally set at the start of the frame.
-enum hwdshaderinfo
-{
-	HWD_SHADERINFO_LEVELTIME = 1,
-};
-
-typedef enum hwdshaderinfo hwdshaderinfo_t;
 
 enum hwdfiltermode
 {
