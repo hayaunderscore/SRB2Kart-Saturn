@@ -183,9 +183,9 @@ static void CV_grshaders_OnChange(void)
 	if (rendermode == render_opengl)
 	{
 		if (HWR_ShouldUsePaletteRendering())
-		{
-			InitPalette(0, false);	
-		}
+			HWR_InitPalette(0, false);
+		
+		HWD.pfnSetSpecialState(HWD_PAL_SHADER, HWR_ShouldUsePaletteRendering());
 		
 		V_SetPalette(0);
 	}
@@ -197,6 +197,9 @@ static void CV_useCustomShaders_ONChange(void)
 	{
 		if (HWR_UseShader())
 			HWD.pfnInitCustomShaders();
+		
+		if (HWR_ShouldUsePaletteRendering())
+			HWR_InitPalette(0, false);
 	}
 }
 
@@ -205,6 +208,11 @@ static void CV_Gammaxxx_ONChange(void)
 {
 	if (rendermode == render_opengl)
 		V_SetPalette(0);
+}
+
+void HWR_InitPalette(int flashnum, boolean skiplut)
+{
+    HWD.pfnInitPalette(flashnum, skiplut);
 }
 
 
@@ -2314,7 +2322,7 @@ void HWR_ProcessSeg(void) // Sort of like GLWall::Process in GZDoom
 	{
 		ffloor_t * rover;
 		fixed_t    highcut = 0, lowcut = 0;
-		fixed_t lowcutslope, highcutslope;
+		fixed_t lowcutslope = 0, highcutslope = 0;
 
 		// Used for height comparisons and etc across FOFs and slopes
 		fixed_t high1, highslope1, low1, lowslope1;
@@ -4113,7 +4121,7 @@ static void HWR_RotateSpritePolyToAim(gr_vissprite_t *spr, FOutVector *wallVerts
 		// do interpolation
 		if (R_UsingFrameInterpolation() && !paused)
 		{
-			if (spr->precip)
+			if (precip)
 			{
 				R_InterpolatePrecipMobjState((precipmobj_t *)spr->mobj, rendertimefrac, &interp);
 			}
@@ -4124,7 +4132,7 @@ static void HWR_RotateSpritePolyToAim(gr_vissprite_t *spr, FOutVector *wallVerts
 		}
 		else
 		{
-			if (spr->precip)
+			if (precip)
 			{
 				R_InterpolatePrecipMobjState((precipmobj_t *)spr->mobj, FRACUNIT, &interp);
 			}
