@@ -1135,7 +1135,7 @@ void HWR_DrawMD2(gr_vissprite_t *spr)
 				colormap = sector->extra_colormap;
 		}
 
-		HWR_Lighting(&Surf, lightlevel, colormap);
+		HWR_Lighting(&Surf, lightlevel, colormap, false);
 	}
 	else
 	{

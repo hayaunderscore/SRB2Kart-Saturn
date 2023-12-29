@@ -1329,6 +1329,9 @@ INT32 R_CreateColormap(char *p1, char *p2, char *p3)
 	extra_colormaps[mapnum].fadestart = (UINT16)fadestart;
 	extra_colormaps[mapnum].fadeend = (UINT16)fadeend;
 	extra_colormaps[mapnum].fog = fog;
+#ifdef HWRENDER
+	extra_colormaps[mapnum].gl_lighttable_id = 0;
+#endif
 	
 	if (rendermode != render_none)
 	{	
