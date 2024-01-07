@@ -1372,7 +1372,7 @@ void HWR_DrawMD2(gr_vissprite_t *spr)
 		if ((spr->mobj->rollangle)||(sliptideroll && cv_sliptideroll.value))
 		{
 			angle_t rollang = 0;
-			rollfactor = ((spr->mobj->rollmodel == true) ? 1 : 0);
+			rollfactor = 1;
 
 			rollang = (spr->mobj->player && sliptideroll && cv_sliptideroll.value)
             ? (spr->mobj->rollangle * rollfactor) + (sliptideroll * spr->mobj->player->sliptidemem)
@@ -1380,7 +1380,7 @@ void HWR_DrawMD2(gr_vissprite_t *spr)
 			
 			fixed_t anglef = AngleFixed(rollang);
 			p.rollangle = FIXED_TO_FLOAT(anglef);
-			p.rollmodel = (spr->mobj->rollmodel);
+			p.rollmodel = true;
 			p.roll = true;
 
 			// rotation pivot
