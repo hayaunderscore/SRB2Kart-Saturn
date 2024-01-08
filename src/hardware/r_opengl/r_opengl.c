@@ -495,6 +495,10 @@ static PFNglColorPointer pglColorPointer;
 #define GL_TEXTURE1 0x84C1
 #endif
 
+#ifndef GL_TEXTURE2
+#define GL_TEXTURE2 0x84C2
+#endif
+
 boolean SetupGLfunc(void)
 {
 #ifndef STATIC_OPENGL
@@ -684,19 +688,19 @@ static float shader_leveltime = 0;
 // ========================
 
 //
-// GLSL Software fragment shader
+// GLSL generic fragment shader
 //
 
-#define GLSL_DOOM_COLORMAP_floors \
-	"float R_DoomColormap(float light, float z)\n" \
-	"{\n" \
-		"float lightnum = clamp(light / 17.0, 0.0, 15.0);\n" \
-		"float lightz = clamp(z / 16.0, 0.0, 127.0);\n" \
-		"float startmap = (15.0 - lightnum) * 4.0;\n" \
-		"float scale = 160.0 / (lightz + 1.0);\n" \
-		"float cap = (155.0 - light) * 0.26;\n" \
-		"return max(startmap * 1.06 - scale * 0.5 * 1.15, cap);\n" \
-	"}\n"
+#define GLSL_DEFAULT_FRAGMENT_SHADER \
+	"uniform sampler2D tex;\n" \
+	"uniform vec4 poly_color;\n" \
+	"void main(void) {\n" \
+		"gl_FragColor = texture2D(tex, gl_TexCoord[0].st) * poly_color;\n" \
+	"}\0"
+
+//
+// GLSL Software fragment shader
+//
 
 #define GLSL_DOOM_COLORMAP \
 	"float R_DoomColormap(float light, float z)\n" \
@@ -705,18 +709,8 @@ static float shader_leveltime = 0;
 		"float lightz = clamp(z / 16.0, 0.0, 127.0);\n" \
 		"float startmap = (15.0 - lightnum) * 4.0;\n" \
 		"float scale = 160.0 / (lightz + 1.0);\n" \
-		"return startmap - scale * 0.5;\n" \
-	"}\n"
-
-#define GLSL_DOOM_COLORMAP_walls \
-	"float R_DoomColormap(float light, float z)\n" \
-	"{\n" \
-		"float lightnum = clamp(light / 17.0, 0.0, 15.0);\n" \
-		"float lightz = clamp(z / 16.0, 0.0, 127.0);\n" \
-		"float startmap = (15.0 - lightnum) * 4.0;\n" \
-		"float scale = 160.0 / (lightz + 1.0);\n" \
 		"float cap = (155.0 - light) * 0.26;\n" \
-		"return max(startmap * 1.05 - scale * 0.5 * 2.2, cap);\n" \
+		"return max(startmap * STARTMAP_FUDGE - scale * 0.5 * SCALE_FUDGE, cap);\n" \
 	"}\n"
 
 #define GLSL_DOOM_LIGHT_EQUATION \
@@ -766,16 +760,26 @@ static float shader_leveltime = 0;
 		"gl_FragColor = final_color;\n" \
 	"}\n"
 
+#define GLSL_FLOOR_FUDGES \
+	"#define STARTMAP_FUDGE 1.06\n" \
+	"#define SCALE_FUDGE 1.15\n"
+
+#define GLSL_WALL_FUDGES \
+	"#define STARTMAP_FUDGE 1.05\n" \
+	"#define SCALE_FUDGE 2.2\n"
+
 #define GLSL_SOFTWARE_FRAGMENT_SHADER_FLOORS \
 	GLSL_SOFTWARE_UNIFORMS \
-	GLSL_DOOM_COLORMAP_floors \
+	GLSL_FLOOR_FUDGES \
+	GLSL_DOOM_COLORMAP \
 	GLSL_DOOM_LIGHT_EQUATION \
 	GLSL_SOFTWARE_MAIN \
 	"\0"
 
 #define GLSL_SOFTWARE_FRAGMENT_SHADER_WALLS \
 	GLSL_SOFTWARE_UNIFORMS \
-	GLSL_DOOM_COLORMAP_walls \
+	GLSL_WALL_FUDGES \
+	GLSL_DOOM_COLORMAP \
 	GLSL_DOOM_LIGHT_EQUATION \
 	GLSL_SOFTWARE_MAIN \
 	"\0"
@@ -803,13 +807,15 @@ static float shader_leveltime = 0;
 
 #define GLSL_SOFTWARE_PAL_FRAGMENT_SHADER_FLOORS \
 	GLSL_SOFTWARE_PAL_UNIFORMS \
-	GLSL_DOOM_COLORMAP_floors \
+	GLSL_FLOOR_FUDGES \
+	GLSL_DOOM_COLORMAP \
 	GLSL_SOFTWARE_PAL_MAIN \
 	"\0"
 
 #define GLSL_SOFTWARE_PAL_FRAGMENT_SHADER_WALLS \
 	GLSL_SOFTWARE_PAL_UNIFORMS \
-	GLSL_DOOM_COLORMAP_walls \
+	GLSL_WALL_FUDGES \
+	GLSL_DOOM_COLORMAP \
 	GLSL_SOFTWARE_PAL_MAIN \
 	"\0"
 
@@ -821,6 +827,7 @@ static float shader_leveltime = 0;
 //
 
 #define GLSL_WATER_FRAGMENT_SHADER \
+	GLSL_FLOOR_FUDGES \
 	"uniform sampler2D tex;\n" \
 	"uniform vec4 poly_color;\n" \
 	"uniform vec4 tint_color;\n" \
@@ -850,6 +857,7 @@ static float shader_leveltime = 0;
 	"}\0"
 	
 #define GLSL_PALETTE_WATER_FRAGMENT_SHADER \
+	GLSL_FLOOR_FUDGES \
 	"const float freq = 0.025;\n" \
     "const float amp = 0.025;\n" \
     "const float speed = 2.0;\n" \
@@ -861,7 +869,7 @@ static float shader_leveltime = 0;
     "uniform vec4 poly_color;\n" \
     "uniform float lighting;\n" \
     "uniform float leveltime;\n" \
-    GLSL_DOOM_COLORMAP_floors \
+    GLSL_DOOM_COLORMAP \
     "void main(void) {\n" \
 		"float water_z = (gl_FragCoord.z / gl_FragCoord.w) / 2.0;\n" \
 		"float a = -pi * (water_z * freq) + (leveltime * speed);\n" \
@@ -885,12 +893,13 @@ static float shader_leveltime = 0;
 //
 
 #define GLSL_FOG_FRAGMENT_SHADER \
+	GLSL_FLOOR_FUDGES \
 	"uniform vec4 tint_color;\n" \
 	"uniform vec4 fade_color;\n" \
 	"uniform float lighting;\n" \
 	"uniform float fade_start;\n" \
 	"uniform float fade_end;\n" \
-	GLSL_DOOM_COLORMAP_floors \
+	GLSL_DOOM_COLORMAP \
 	GLSL_DOOM_LIGHT_EQUATION \
 	"void main(void) {\n" \
 		"vec4 base_color = gl_Color;\n" \
@@ -910,19 +919,19 @@ static float shader_leveltime = 0;
 	"uniform int palette[768];\n" \
 	"void main(void) {\n" \
 		"vec3 texel = vec3(texture2D(tex, gl_TexCoord[0].st));\n" \
-		"int pal_idx = int(texture3D(lookup_tex, vec3((texel * 63.0 + 0.5) / 64.0))[0] * 255.0);\n" \
+		"int pal_idx = int(texture3D(lookup_tex, vec3((63.0/64.0) * texel + 1.0 / 128.0))[0] * 255.0);\n" \
 		"gl_FragColor = vec4(float(palette[pal_idx*3])/255.0, float(palette[pal_idx*3+1])/255.0, float(palette[pal_idx*3+2])/255.0, 1.0);\n" \
 	"}\0"
 
 //
-// GLSL generic fragment shader
-//
-
-#define GLSL_DEFAULT_FRAGMENT_SHADER \
+// Sky fragment shader
+// Modulates poly_color with gl_Color
+//	
+#define GLSL_SKY_FRAGMENT_SHADER \
 	"uniform sampler2D tex;\n" \
 	"uniform vec4 poly_color;\n" \
 	"void main(void) {\n" \
-		"gl_FragColor = texture2D(tex, gl_TexCoord[0].st) * poly_color;\n" \
+		"gl_FragColor = texture2D(tex, gl_TexCoord[0].st) * gl_Color * poly_color;\n" \
 	"}\0"
 
 static const char *fragment_shaders[] = {
@@ -948,10 +957,7 @@ static const char *fragment_shaders[] = {
 	GLSL_FOG_FRAGMENT_SHADER,
 
 	// Sky fragment shader
-	"uniform sampler2D tex;\n"
-	"void main(void) {\n"
-		"gl_FragColor = texture2D(tex, gl_TexCoord[0].st);\n"
-	"}\0",
+	GLSL_SKY_FRAGMENT_SHADER,
 
 	// Palette fragment shader
 	GLSL_PALETTE_FRAGMENT_SHADER,
@@ -4543,14 +4549,18 @@ EXPORT void HWRAPI(DrawScreenFinalTexture)(int width, int height)
 	clearColour.red = clearColour.green = clearColour.blue = 0;
 	clearColour.alpha = 1;
 	ClearBuffer(true, false, false, &clearColour);
-	pglBindTexture(GL_TEXTURE_2D, finalScreenTexture);
+	if (gl_palshader)
+	{
+		SetBlend(PF_NoDepthTest);
+		pglBindTexture(GL_TEXTURE_2D, finalScreenTexture);
+	}
+	else
+		pglBindTexture(GL_TEXTURE_2D, finalScreenTexture);
 
 	if (gl_palshader)
 	{
-		Shader_SetUniforms(NULL, NULL, NULL, NULL); // prepare shader, if it is enabled
-
-		pglUseProgram(gl_shaderprograms[8].program); // palette shader
-		pglActiveTexture(GL_TEXTURE1);
+		pglUseProgram(gl_shaderprograms[8].program); // palette postprocess shader
+		pglActiveTexture(GL_TEXTURE2);
 	}
 
 	pglColor4ubv(white);
