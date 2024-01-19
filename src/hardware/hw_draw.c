@@ -548,6 +548,7 @@ void HWR_FadeScreenMenuBack(UINT16 color, UINT8 strength)
 {
     FOutVector  v[4];
     FSurfaceInfo Surf;
+	FBITFIELD poly_flags = PF_NoTexture|PF_Modulated|PF_NoDepthTest;
 
     v[0].x = v[3].x = -1.0f;
     v[2].x = v[1].x =  1.0f;
@@ -562,8 +563,25 @@ void HWR_FadeScreenMenuBack(UINT16 color, UINT8 strength)
 
     if (color & 0xFF00) // Do COLORMAP fade.
     {
-        Surf.PolyColor.rgba = UINT2RGBA(0x01010160);
-        Surf.PolyColor.s.alpha = (strength*8);
+		if (HWR_ShouldUsePaletteRendering() && cv_grscreentextures.value)
+		{
+			const hwdscreentexture_t scr_tex = HWD_SCREENTEXTURE_GENERIC2;
+
+			Surf.LightTableId = HWR_GetLightTableID(NULL);
+			Surf.LightInfo.light_level = strength;
+			HWD.pfnMakeScreenTexture(scr_tex);
+			HWD.pfnSetShader(12);
+			HWD.pfnDrawScreenTexture(scr_tex, &Surf, PF_ColorMapped|PF_NoDepthTest);
+			HWD.pfnUnSetShader();
+
+			return;
+		}
+		else
+		{
+			Surf.PolyColor.rgba = UINT2RGBA(0x01010160);
+			Surf.PolyColor.s.alpha = (strength*8);
+			poly_flags |= PF_Translucent;
+		}
     }
     else // Do TRANSMAP** fade.
     {
@@ -574,9 +592,11 @@ void HWR_FadeScreenMenuBack(UINT16 color, UINT8 strength)
 			Surf.PolyColor.s.alpha = softwaretranstogl[strength];
 		else
 			Surf.PolyColor.s.alpha = (UINT8)(strength*25.5f);
+		
+		poly_flags |= PF_Translucent;
     }
 
-    HWD.pfnDrawPolygon(&Surf, v, 4, PF_NoTexture|PF_Modulated|PF_Translucent|PF_NoDepthTest);
+    HWD.pfnDrawPolygon(&Surf, v, 4, poly_flags);
 }
 
 // Draw the console background with translucency support
@@ -1165,7 +1185,7 @@ UINT8 *HWR_GetScreenshot(void)
 		return NULL;
 
 	// returns 24bit 888 RGB
-	HWD.pfnReadRect(0, 0, vid.width, vid.height, vid.width * 3, (void *)buf);
+	HWD.pfnReadScreenTexture(HWD_SCREENTEXTURE_GENERIC2, (void *)buf);
 	return buf;
 }
 
@@ -1181,7 +1201,7 @@ boolean HWR_Screenshot(const char *pathname)
 	}
 
 	// returns 24bit 888 RGB
-	HWD.pfnReadRect(0, 0, vid.width, vid.height, vid.width * 3, (void *)buf);
+	HWD.pfnReadScreenTexture(HWD_SCREENTEXTURE_GENERIC2, (void *)buf);
 
 #ifdef USE_PNG
 	ret = M_SavePNG(pathname, buf, vid.width, vid.height, NULL);

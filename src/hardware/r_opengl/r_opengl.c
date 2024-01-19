@@ -124,10 +124,7 @@ static GLint   viewport[4];
 //			flush all of the stored textures, leaving them unavailable at times such as between levels
 //			These need to start at 0 and be set to their number, and be reset to 0 when deleted so that Intel GPUs
 //			can know when the textures aren't there, as textures are always considered resident in their virtual memory
-static GLuint screentexture = 0;
-static GLuint startScreenWipe = 0;
-static GLuint endScreenWipe = 0;
-static GLuint finalScreenTexture = 0;
+static GLuint screenTextures[NUMSCREENTEXTURES] = {0};
 
 // Lactozilla: Set shader programs and uniforms
 static void Shader_SetUniforms(FSurfaceInfo *Surface, GLRGBAFloat *poly, GLRGBAFloat *tint, GLRGBAFloat *fade);
@@ -568,7 +565,7 @@ boolean SetupGLfunc(void)
 	GETOPENGLFUNC(pglTexParameteri, glTexParameteri)
 	GETOPENGLFUNC(pglTexImage1D, glTexImage1D)
 	GETOPENGLFUNC(pglTexImage2D, glTexImage2D)
-	GETOPENGLFUNC(pglTexSubImage2D , glTexSubImage2D)
+	GETOPENGLFUNC(pglTexSubImage2D, glTexSubImage2D)
 
 	GETOPENGLFUNC(pglGenTextures, glGenTextures)
 	GETOPENGLFUNC(pglDeleteTextures, glDeleteTextures)
@@ -924,6 +921,19 @@ static float shader_leveltime = 0;
 		"vec4 final_color = texture1D(palette_tex, palette_coord);\n" \
 		"gl_FragColor = final_color;\n" \
 	"}\0"
+	
+
+#define GLSL_UI_COLORMAP_FADE_SHADER \
+	"uniform sampler2D tex;\n" \
+	"uniform float lighting;\n" \
+	"uniform sampler3D palette_lookup_tex;\n" \
+	"uniform sampler2D lighttable_tex;\n" \
+	"void main(void) {\n" \
+		"vec4 texel = texture2D(tex, gl_TexCoord[0].st);\n" \
+		"float tex_pal_idx = texture3D(palette_lookup_tex, vec3((texel * 63.0 + 0.5) / 64.0))[0] * 255.0;\n" \
+		"vec2 lighttable_coord = vec2((tex_pal_idx + 0.5) / 256.0, (lighting + 0.5) / 32.0);\n" \
+		"gl_FragColor = texture2D(lighttable_tex, lighttable_coord);\n" \
+	"}\0" \
 
 //
 // Sky fragment shader
@@ -972,6 +982,9 @@ static const char *fragment_shaders[] = {
 
 	// Palette water shader
 	GLSL_PALETTE_WATER_FRAGMENT_SHADER,
+	
+	// UI colormap fade shader
+	GLSL_UI_COLORMAP_FADE_SHADER,
 
 	NULL,
 };
@@ -1028,6 +1041,9 @@ static const char *vertex_shaders[] = {
 	GLSL_DEFAULT_VERTEX_SHADER,
 	
 	// Palette water vertex shader
+	GLSL_DEFAULT_VERTEX_SHADER,
+	
+	// UI colormap fade shader
 	GLSL_DEFAULT_VERTEX_SHADER,
 
 	NULL,
@@ -1324,13 +1340,18 @@ EXPORT void HWRAPI(SetShader) (int shader)
 EXPORT void HWRAPI(UnSetShader) (void)
 {
 #ifdef GL_SHADERS
-	gl_shadersenabled = false;
-	gl_currentshaderprogram = 0;
-	gl_shaderprogramchanged = true;// not sure if this is needed
-	if (!pglUseProgram) return;
-	pglUseProgram(0);
+	if (gl_shadersenabled) // don't repeatedly call glUseProgram if not needed
+	{
+		gl_shadersenabled = false;
+		gl_currentshaderprogram = 0;
+		gl_shaderprogramchanged = true;// not sure if this is needed
+		if (!pglUseProgram) return;
+		pglUseProgram(0);
+	}
 #endif
+	gl_shadersenabled = false;
 }
+
 
 EXPORT void HWRAPI(KillShaders) (void)
 {
@@ -1524,57 +1545,39 @@ EXPORT void HWRAPI(ClearMipMapCache) (void)
 	Flush();
 }
 
-// -----------------+
-// ReadRect         : Read a rectangle region of the truecolor framebuffer
-//                  : store pixels as 16bit 565 RGB
-// Returns          : 16bit 565 RGB pixel array stored in dst_data
-// -----------------+
-EXPORT void HWRAPI(ReadRect) (INT32 x, INT32 y, INT32 width, INT32 height,
-                                INT32 dst_stride, UINT16 * dst_data)
+// Writes screen texture tex into dst_data.
+// Pixel format is 24-bit RGB. Row order is top to bottom.
+// Dimensions are screen_width * screen_height.
+EXPORT void HWRAPI(ReadScreenTexture) (int tex, UINT16 *dst_data)
 {
 	INT32 i;
-	//GL_DBG_Printf("ReadRect()\n");
-	if (dst_stride == width*3)
+	int dst_stride = screen_width * 3; // stride between rows of image data
+	GLubyte*top = (GLvoid*)dst_data, *bottom = top + dst_stride * (screen_height - 1);
+	GLubyte *row;
+	row = malloc(dst_stride);
+	if (!row) return;
+	// at the time this function is called, generic2 can be found drawn on the framebuffer
+	// if some other screen texture is needed, draw it to the framebuffer
+	// and draw generic2 back after reading the framebuffer.
+	// this hack is for some reason **much** faster than the simple solution of using glGetTexImage.
+	if (tex != HWD_SCREENTEXTURE_GENERIC2)
+		DrawScreenTexture(tex, NULL, 0);
+	pglPixelStorei(GL_PACK_ALIGNMENT, 1);
+	pglReadPixels(0, 0, screen_width, screen_height, GL_RGB, GL_UNSIGNED_BYTE, dst_data);
+	if (tex != HWD_SCREENTEXTURE_GENERIC2)
+		DrawScreenTexture(HWD_SCREENTEXTURE_GENERIC2, NULL, 0);
+	// Flip image upside down.
+	// In other words, convert OpenGL's "bottom->top" row order into "top->bottom".
+	for(i = 0; i < screen_height/2; i++)
 	{
-		GLubyte*top = (GLvoid*)dst_data, *bottom = top + dst_stride * (height - 1);
-		GLubyte *row = malloc(dst_stride);
-		if (!row) return;
-		pglPixelStorei(GL_PACK_ALIGNMENT, 1);
-		pglReadPixels(x, y, width, height, GL_RGB, GL_UNSIGNED_BYTE, dst_data);
-		pglPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-		for(i = 0; i < height/2; i++)
-		{
-			memcpy(row, top, dst_stride);
-			memcpy(top, bottom, dst_stride);
-			memcpy(bottom, row, dst_stride);
-			top += dst_stride;
-			bottom -= dst_stride;
-		}
-		free(row);
+		memcpy(row, top, dst_stride);
+		memcpy(top, bottom, dst_stride);
+		memcpy(bottom, row, dst_stride);
+		top += dst_stride;
+		bottom -= dst_stride;
 	}
-	else
-	{
-		INT32 j;
-		GLubyte *image = malloc(width*height*3*sizeof (*image));
-		if (!image) return;
-		pglPixelStorei(GL_PACK_ALIGNMENT, 1);
-		pglReadPixels(x, y, width, height, GL_RGB, GL_UNSIGNED_BYTE, image);
-		pglPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-		for (i = height-1; i >= 0; i--)
-		{
-			for (j = 0; j < width; j++)
-			{
-				dst_data[(height-1-i)*width+j] =
-				(UINT16)(
-				                 ((image[(i*width+j)*3]>>3)<<11) |
-				                 ((image[(i*width+j)*3+1]>>2)<<5) |
-				                 ((image[(i*width+j)*3+2]>>3)));
-			}
-		}
-		free(image);
-	}
+	free(row);
 }
-
 
 // -----------------+
 // GClipRect        : Defines the 2D hardware clipping window
@@ -2172,6 +2175,7 @@ static void Shader_SetUniforms(FSurfaceInfo *Surface, GLRGBAFloat *poly, GLRGBAF
 }
 
 // code that is common between DrawPolygon and DrawIndexedTriangles
+// DrawScreenTexture also can use this function for fancier screen texture drawing
 // the corona thing is there too, i have no idea if that stuff works with DrawIndexedTriangles and batching
 static void PreparePolygon(FSurfaceInfo *pSurf, FOutVector *pOutVerts, FBITFIELD PolyFlags)
 {
@@ -3282,7 +3286,7 @@ EXPORT void HWRAPI(PostImgRedraw) (float points[SCREENVERTS][SCREENVERTS][2])
 		16.0f, 16.0f, 6.0f,
 		16.0f, -16.0f, 6.0f
 	};
-
+	
 	if (!gl_enable_screen_textures) return;
 
 	// look for power of two that is large enough for the screen
@@ -3357,77 +3361,13 @@ EXPORT void HWRAPI(PostImgRedraw) (float points[SCREENVERTS][SCREENVERTS][2])
 //			a new size
 EXPORT void HWRAPI(FlushScreenTextures) (void)
 {
-	pglDeleteTextures(1, &screentexture);
-	pglDeleteTextures(1, &startScreenWipe);
-	pglDeleteTextures(1, &endScreenWipe);
-	pglDeleteTextures(1, &finalScreenTexture);
-
-	screentexture = 0;
-	startScreenWipe = 0;
-	endScreenWipe = 0;
-	finalScreenTexture = 0;
+	int i;
+	pglDeleteTextures(NUMSCREENTEXTURES, screenTextures);
+	for (i = 0; i < NUMSCREENTEXTURES; i++)
+		screenTextures[i] = 0;
 }
 
-// Create Screen to fade from
-EXPORT void HWRAPI(StartScreenWipe) (void)
-{
-	INT32 texsize = 512;
-	boolean firstTime = (startScreenWipe == 0);
-
-	// look for power of two that is large enough for the screen
-	while (texsize < screen_width || texsize < screen_height)
-		texsize <<= 1;
-
-	// Create screen texture
-	if (firstTime)
-		pglGenTextures(1, &startScreenWipe);
-	pglBindTexture(GL_TEXTURE_2D, startScreenWipe);
-
-	if (firstTime)
-	{
-		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		Clamp2D(GL_TEXTURE_WRAP_S);
-		Clamp2D(GL_TEXTURE_WRAP_T);
-		pglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 0, 0, texsize, texsize, 0);
-	}
-	else
-		pglCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, texsize, texsize);
-
-	tex_downloaded = startScreenWipe;
-}
-
-// Create Screen to fade to
-EXPORT void HWRAPI(EndScreenWipe)(void)
-{
-	INT32 texsize = 512;
-	boolean firstTime = (endScreenWipe == 0);
-
-	// look for power of two that is large enough for the screen
-	while (texsize < screen_width || texsize < screen_height)
-		texsize <<= 1;
-
-	// Create screen texture
-	if (firstTime)
-		pglGenTextures(1, &endScreenWipe);
-	pglBindTexture(GL_TEXTURE_2D, endScreenWipe);
-
-	if (firstTime)
-	{
-		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		Clamp2D(GL_TEXTURE_WRAP_S);
-		Clamp2D(GL_TEXTURE_WRAP_T);
-		pglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 0, 0, texsize, texsize, 0);
-	}
-	else
-		pglCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, texsize, texsize);
-
-	tex_downloaded = endScreenWipe;
-}
-
-// Draw the last scene under the intermission
-EXPORT void HWRAPI(DrawIntermissionBG)(void)
+EXPORT void HWRAPI(DrawScreenTexture)(int tex, FSurfaceInfo *surf, FBITFIELD polyflags)
 {
 	float xfix, yfix;
 	INT32 texsize = 512;
@@ -3441,6 +3381,8 @@ EXPORT void HWRAPI(DrawIntermissionBG)(void)
 	};
 
 	float fix[8];
+	
+	if (!gl_enable_screen_textures) return;
 
 	// look for power of two that is large enough for the screen
 	while (texsize < screen_width || texsize < screen_height)
@@ -3449,6 +3391,9 @@ EXPORT void HWRAPI(DrawIntermissionBG)(void)
 	xfix = 1/((float)(texsize)/((float)((screen_width))));
 	yfix = 1/((float)(texsize)/((float)((screen_height))));
 
+	// const float screenVerts[12]
+
+	// float fix[8];
 	fix[0] = 0.0f;
 	fix[1] = 0.0f;
 	fix[2] = 0.0f;
@@ -3459,17 +3404,25 @@ EXPORT void HWRAPI(DrawIntermissionBG)(void)
 	fix[7] = 0.0f;
 
 	pglClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-	pglBindTexture(GL_TEXTURE_2D, screentexture);
+
+	pglBindTexture(GL_TEXTURE_2D, screenTextures[tex]);
+	
+	PreparePolygon(surf, NULL, surf ? polyflags : (PF_NoDepthTest));
+	if (!surf)
+		pglColor4ubv(white);
+
 	pglColor4ubv(white);
+
 	pglTexCoordPointer(2, GL_FLOAT, 0, fix);
 	pglVertexPointer(3, GL_FLOAT, 0, screenVerts);
 	pglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
-	tex_downloaded = screentexture;
+	tex_downloaded = screenTextures[tex];
 }
 
+
 // Do screen fades!
-EXPORT void HWRAPI(DoScreenWipe)(void)
+EXPORT void HWRAPI(DoScreenWipe)(int wipeStart, int wipeEnd)
 {
 	INT32 texsize = 512;
 	float xfix, yfix;
@@ -3501,6 +3454,9 @@ EXPORT void HWRAPI(DoScreenWipe)(void)
 	xfix = 1/((float)(texsize)/((float)((screen_width))));
 	yfix = 1/((float)(texsize)/((float)((screen_height))));
 
+	// const float screenVerts[12]
+
+	// float fix[8];
 	fix[0] = 0.0f;
 	fix[1] = 0.0f;
 	fix[2] = 0.0f;
@@ -3516,7 +3472,7 @@ EXPORT void HWRAPI(DoScreenWipe)(void)
 	pglEnable(GL_TEXTURE_2D);
 
 	// Draw the original screen
-	pglBindTexture(GL_TEXTURE_2D, startScreenWipe);
+	pglBindTexture(GL_TEXTURE_2D, screenTextures[wipeStart]);
 	pglColor4ubv(white);
 	pglTexCoordPointer(2, GL_FLOAT, 0, fix);
 	pglVertexPointer(3, GL_FLOAT, 0, screenVerts);
@@ -3527,7 +3483,7 @@ EXPORT void HWRAPI(DoScreenWipe)(void)
 	// Draw the end screen that fades in
 	pglActiveTexture(GL_TEXTURE0);
 	pglEnable(GL_TEXTURE_2D);
-	pglBindTexture(GL_TEXTURE_2D, endScreenWipe);
+	pglBindTexture(GL_TEXTURE_2D, screenTextures[wipeEnd]);
 	pglTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
 	pglActiveTexture(GL_TEXTURE1);
@@ -3535,6 +3491,8 @@ EXPORT void HWRAPI(DoScreenWipe)(void)
 	pglBindTexture(GL_TEXTURE_2D, fademaskdownloaded);
 
 	pglTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+	// const float defaultST[8]
 
 	pglClientActiveTexture(GL_TEXTURE0);
 	pglTexCoordPointer(2, GL_FLOAT, 0, fix);
@@ -3549,38 +3507,7 @@ EXPORT void HWRAPI(DoScreenWipe)(void)
 
 	pglActiveTexture(GL_TEXTURE0);
 	pglClientActiveTexture(GL_TEXTURE0);
-	tex_downloaded = endScreenWipe;
-}
-
-// Create a texture from the screen.
-EXPORT void HWRAPI(MakeScreenTexture) (void)
-{
-	INT32 texsize = 512;
-	boolean firstTime = (screentexture == 0);
-
-	if (!gl_enable_screen_textures) return;
-
-	// look for power of two that is large enough for the screen
-	while (texsize < screen_width || texsize < screen_height)
-		texsize <<= 1;
-
-	// Create screen texture
-	if (firstTime)
-		pglGenTextures(1, &screentexture);
-	pglBindTexture(GL_TEXTURE_2D, screentexture);
-
-	if (firstTime)
-	{
-		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		Clamp2D(GL_TEXTURE_WRAP_S);
-		Clamp2D(GL_TEXTURE_WRAP_T);
-		pglCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 0, 0, texsize, texsize, 0);
-	}
-	else
-		pglCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, texsize, texsize);
-
-	tex_downloaded = screentexture;
+	tex_downloaded = screenTextures[wipeEnd];
 }
 
 EXPORT void HWRAPI(RenderVhsEffect) (fixed_t upbary, fixed_t downbary, UINT8 updistort, UINT8 downdistort, UINT8 barsize)
@@ -3607,9 +3534,9 @@ EXPORT void HWRAPI(RenderVhsEffect) (fixed_t upbary, fixed_t downbary, UINT8 upd
 	yfix = 1/((float)(texsize)/((float)((screen_height))));
 
 	// Slight fuzziness
-	MakeScreenTexture();
+	MakeScreenTexture(HWD_SCREENTEXTURE_GENERIC1);
 	SetBlend(PF_Modulated|PF_Translucent|PF_NoDepthTest);
-	pglBindTexture(GL_TEXTURE_2D, screentexture);
+	//pglBindTexture(GL_TEXTURE_2D, screentexture);
 
 	for (i = 0; i < 1; i += 2.f/vid.height)
 	{
@@ -3631,8 +3558,8 @@ EXPORT void HWRAPI(RenderVhsEffect) (fixed_t upbary, fixed_t downbary, UINT8 upd
 	}
 
 	// Upward bar
-	MakeScreenTexture();
-	pglBindTexture(GL_TEXTURE_2D, screentexture);
+	MakeScreenTexture(HWD_SCREENTEXTURE_GENERIC1);
+	//pglBindTexture(GL_TEXTURE_2D, screentexture);
 	color[0] = color[1] = color[2] = 190;
 	color[3] = 250;
 	pglColor4ubv(color);
@@ -3659,8 +3586,8 @@ EXPORT void HWRAPI(RenderVhsEffect) (fixed_t upbary, fixed_t downbary, UINT8 upd
 	pglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
 	// Downward bar
-	MakeScreenTexture();
-	pglBindTexture(GL_TEXTURE_2D, screentexture);
+	MakeScreenTexture(HWD_SCREENTEXTURE_GENERIC1);
+	//pglBindTexture(GL_TEXTURE_2D, screentexture);
 
 	fix[0] = 0.0f;
 	fix[6] = xfix;
@@ -3684,11 +3611,12 @@ EXPORT void HWRAPI(RenderVhsEffect) (fixed_t upbary, fixed_t downbary, UINT8 upd
 	pglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 }
 
-EXPORT void HWRAPI(MakeScreenFinalTexture) (void)
+// Create a texture from the screen.
+EXPORT void HWRAPI(MakeScreenTexture) (int tex)
 {
 	INT32 texsize = 512;
-	boolean firstTime = (finalScreenTexture == 0);
-
+	boolean firstTime = (screenTextures[tex] == 0);
+	
 	if (!gl_enable_screen_textures) return;
 
 	// look for power of two that is large enough for the screen
@@ -3697,8 +3625,8 @@ EXPORT void HWRAPI(MakeScreenFinalTexture) (void)
 
 	// Create screen texture
 	if (firstTime)
-		pglGenTextures(1, &finalScreenTexture);
-	pglBindTexture(GL_TEXTURE_2D, finalScreenTexture);
+		pglGenTextures(1, &screenTextures[tex]);
+	pglBindTexture(GL_TEXTURE_2D, screenTextures[tex]);
 
 	if (firstTime)
 	{
@@ -3711,10 +3639,10 @@ EXPORT void HWRAPI(MakeScreenFinalTexture) (void)
 	else
 		pglCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, texsize, texsize);
 
-	tex_downloaded = finalScreenTexture;
+	tex_downloaded = screenTextures[tex];
 }
 
-EXPORT void HWRAPI(DrawScreenFinalTexture)(int width, int height)
+EXPORT void HWRAPI(DrawScreenFinalTexture)(int tex, int width, int height)
 {
 	float xfix, yfix;
 	float origaspect, newaspect;
@@ -3724,7 +3652,7 @@ EXPORT void HWRAPI(DrawScreenFinalTexture)(int width, int height)
 
 	float off[12];
 	float fix[8];
-
+	
 	if (!gl_enable_screen_textures) return;
 
 	// look for power of two that is large enough for the screen
@@ -3747,6 +3675,7 @@ EXPORT void HWRAPI(DrawScreenFinalTexture)(int width, int height)
 		yoff = newaspect / origaspect;
 	}
 
+	// float off[12];
 	off[0] = -xoff;
 	off[1] = -yoff;
 	off[2] = 1.0f;
@@ -3760,6 +3689,7 @@ EXPORT void HWRAPI(DrawScreenFinalTexture)(int width, int height)
 	off[10] = -yoff;
 	off[11] = 1.0f;
 
+	// float fix[8];
 	fix[0] = 0.0f;
 	fix[1] = 0.0f;
 	fix[2] = 0.0f;
@@ -3774,27 +3704,25 @@ EXPORT void HWRAPI(DrawScreenFinalTexture)(int width, int height)
 	clearColour.red = clearColour.green = clearColour.blue = 0;
 	clearColour.alpha = 1;
 	ClearBuffer(true, false, false, &clearColour);
+	SetBlend(PF_NoDepthTest);
 
+	pglBindTexture(GL_TEXTURE_2D, screenTextures[tex]);
+	
 	if (HWR_ShouldUsePaletteRendering())
-		SetBlend(PF_NoDepthTest);
-
-	pglBindTexture(GL_TEXTURE_2D, finalScreenTexture);
-
-	if (HWR_ShouldUsePaletteRendering()) // still quite hacky, but the replacement code in i_video didnt work and killed performance instead. somehow need to figure out whats up with that.
 		pglUseProgram(gl_shaderprograms[8].program); // palette postprocess shader
 
 	pglColor4ubv(white);
+
 	pglTexCoordPointer(2, GL_FLOAT, 0, fix);
 	pglVertexPointer(3, GL_FLOAT, 0, off);
 
 	pglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-	tex_downloaded = finalScreenTexture;
 	
 	if (HWR_ShouldUsePaletteRendering())
 		pglUseProgram(0);
-}
 
+	tex_downloaded = screenTextures[tex];
+}
 
 EXPORT void HWRAPI(SetPaletteLookup)(UINT8 *lut)
 {
