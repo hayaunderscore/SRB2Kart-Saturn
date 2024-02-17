@@ -27,11 +27,7 @@
 #include "r_opengl.h"
 #include "r_vbo.h"
 
-//#include "../../p_tick.h" // for leveltime (NOTE: THIS IS BAD, FIGURE OUT HOW TO PROPERLY IMPLEMENT gl_leveltime)
-#include "../../i_system.h" // for I_GetPreciseTime (batching time measurements)
-
 #include "../hw_main.h"
-#include "../hw_batching.h"
 
 // Eeeeh not sure is this right way, but it works < sry :c < sry again it had to go :c
 
@@ -63,7 +59,7 @@ typedef struct LTListItem LTListItem;
 static const GLubyte white[4] = { 255, 255, 255, 255 };
 
 // With OpenGL 1.1+, the first texture should be 1
-#define NOTEXTURE_NUM     0
+static GLuint NOTEXTURE_NUM = 0;
 
 #define      N_PI_DEMI               (M_PIl/2.0f) //(1.5707963268f)
 
@@ -84,6 +80,9 @@ static  FBITFIELD   CurrentPolyFlags;
 
 static  FTextureInfo *gr_cachetail = NULL;
 static  FTextureInfo *gr_cachehead = NULL;
+
+static RGBA_t *textureBuffer = NULL;
+static size_t textureBufferSize = 0;
 
 // Linked list of all lighttables.
 static LTListItem *LightTablesTail = NULL;
@@ -114,10 +113,6 @@ static GLfloat modelMatrix[16];
 static GLfloat projMatrix[16];
 static GLint   viewport[4];
 
-#ifdef USE_PALETTED_TEXTURE
-	PFNGLCOLORTABLEEXTPROC  glColorTableEXT = NULL;
-	GLubyte                 palette_tex[256*3];
-#endif
 
 // Sryder:	NextTexAvail is broken for these because palette changes or changes to the texture filter or antialiasing
 //			flush all of the stored textures, leaving them unavailable at times such as between levels
@@ -485,7 +480,6 @@ static PFNglColorPointer pglColorPointer;
 #ifndef GL_TEXTURE1
 #define GL_TEXTURE1 0x84C1
 #endif
-
 #ifndef GL_TEXTURE2
 #define GL_TEXTURE2 0x84C2
 #endif
@@ -901,6 +895,8 @@ static void SetNoTexture(void)
 	// Disable texture.
 	if (tex_downloaded != NOTEXTURE_NUM)
 	{
+		if (NOTEXTURE_NUM == 0)
+			pglGenTextures(1, &NOTEXTURE_NUM);
 		pglBindTexture(GL_TEXTURE_2D, NOTEXTURE_NUM);
 		tex_downloaded = NOTEXTURE_NUM;
 	}
@@ -972,11 +968,13 @@ void SetStates(void)
 	pglEnable(GL_TEXTURE_2D);      // two-dimensional texturing
 	pglTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
+	pglEnable(GL_ALPHA_TEST);
 	pglAlphaFunc(GL_NOTEQUAL, 0.0f);
 	pglEnable(GL_BLEND);           // enable color blending
 
 	pglColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
+	pglEnable(GL_STENCIL_TEST);
 	pglEnable(GL_DEPTH_TEST);    // check the depth buffer
 	pglDepthMask(GL_TRUE);             // enable writing to depth buffer
 	pglClearDepth(1.0f);
@@ -987,7 +985,7 @@ void SetStates(void)
 	CurrentPolyFlags = 0xffffffff;
 	SetBlend(0);
 
-	//tex_downloaded = (GLuint)-1;
+	tex_downloaded = 0;
 	SetNoTexture();
 
 	pglPolygonOffset(-1.0f, -1.0f);
@@ -996,8 +994,6 @@ void SetStates(void)
 	pglLoadIdentity();
 	pglScalef(1.0f, 1.0f, -1.0f);
 	pglGetFloatv(GL_MODELVIEW_MATRIX, modelMatrix); // added for new coronas' code (without depth buffer)
-	
-	pglEnable(GL_STENCIL_TEST);
 }
 
 // -----------------+
@@ -1020,6 +1016,10 @@ void Flush(void)
 	gr_cachetail = gr_cachehead = NULL; //Hurdler: well, gr_cachehead is already NULL
 
 	tex_downloaded = 0;
+	
+	free(textureBuffer);
+	textureBuffer = NULL;
+	textureBufferSize = 0;
 }
 
 
@@ -1142,7 +1142,7 @@ EXPORT void HWRAPI(GClipRect) (INT32 minx, INT32 miny, INT32 maxx, INT32 maxy, f
 // -----------------+
 EXPORT void HWRAPI(ClearBuffer) (FBOOLEAN ColorMask,
                                     FBOOLEAN DepthMask,
-														FBOOLEAN StencilMask,
+									FBOOLEAN StencilMask,
                                     FRGBAFloat * ClearColor)
 {
 	//GL_DBG_Printf("ClearBuffer(%d)\n", alpha);
@@ -1360,42 +1360,48 @@ EXPORT void HWRAPI(SetBlend) (FBITFIELD PolyFlags)
 	CurrentPolyFlags = PolyFlags;
 }
 
+static void AllocTextureBuffer(GLMipmap_t *pTexInfo)
+{
+	size_t size = pTexInfo->width * pTexInfo->height;
+	if (size > textureBufferSize)
+	{
+		textureBuffer = realloc(textureBuffer, size * sizeof(RGBA_t));
+		if (textureBuffer == NULL)
+			I_Error("AllocTextureBuffer: out of memory allocating %s bytes", sizeu1(size * sizeof(RGBA_t)));
+		textureBufferSize = size;
+	}
+}
 
 // -----------------+
-// UpdateTexture    : Updates the texture data.
+// UpdateTexture    : Updates texture data.
 // -----------------+
 EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 {
-	// Download a mipmap
-	boolean updatemipmap = true;
-	static RGBA_t   tex[2048*2048];
-	const GLvoid   *ptex = tex;
-	INT32             w, h;
-	GLuint texnum = 0;
+	// Upload a texture
+	GLuint num = pTexInfo->downloaded;
+	boolean update = true;
+
+	INT32 w = pTexInfo->width, h = pTexInfo->height;
+	INT32 i, j;
+
+	const GLubyte *pImgData = (const GLubyte *)pTexInfo->data;
+	const GLvoid *ptex = NULL;
+	RGBA_t *tex = NULL;
 	
-
-	if (!pTexInfo->downloaded)
+	// Generate a new texture name.
+	if (!num)
 	{
-		pglGenTextures(1, &texnum);
-		pTexInfo->downloaded = texnum;
-		updatemipmap = false;
+		pglGenTextures(1, &num);
+		pTexInfo->downloaded = num;
+		update = false;
 	}
-	else
-		texnum = pTexInfo->downloaded;
 
-	//GL_DBG_Printf ("DownloadMipmap %d %x\n",(INT32)texnum,pTexInfo->grInfo.data);
+	//GL_DBG_Printf("UpdateTexture %d %x\n", (INT32)num, pImgData);
 
-	w = pTexInfo->width;
-	h = pTexInfo->height;
-
-	if (w*h > 2048*2048 && pTexInfo->grInfo.format != GL_RGBA)
-		I_Error("Tried to convert too big texture: %dx%d", w, h);
-
-	if ((pTexInfo->grInfo.format == GR_TEXFMT_P_8) ||
-		(pTexInfo->grInfo.format == GR_TEXFMT_AP_88))
+	if ((pTexInfo->format == GL_TEXFMT_P_8) || (pTexInfo->format == GL_TEXFMT_AP_88))
 	{
-		const GLubyte *pImgData = (const GLubyte *)pTexInfo->grInfo.data;
-		INT32 i, j;
+		AllocTextureBuffer(pTexInfo);
+		ptex = tex = textureBuffer;
 
 		for (j = 0; j < h; j++)
 		{
@@ -1420,7 +1426,7 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 
 				pImgData++;
 
-				if (pTexInfo->grInfo.format == GR_TEXFMT_AP_88)
+				if (pTexInfo->format == GL_TEXFMT_AP_88)
 				{
 					if (!(pTexInfo->flags & TF_CHROMAKEYED))
 						tex[w*j+i].s.alpha = *pImgData;
@@ -1430,16 +1436,15 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 			}
 		}
 	}
-	else if (pTexInfo->grInfo.format == GR_RGBA)
+	else if (pTexInfo->format == GL_TEXFMT_RGBA)
 	{
-		// corona test : passed as ARGB 8888, which is not in glide formats
-		// Hurdler: not used for coronas anymore, just for dynamic lighting
-		ptex = pTexInfo->grInfo.data;
+		// Directly upload the texture data without any kind of conversion.
+		ptex = pImgData;
 	}
-	else if (pTexInfo->grInfo.format == GR_TEXFMT_ALPHA_INTENSITY_88)
+	else if (pTexInfo->format == GL_TEXFMT_ALPHA_INTENSITY_88)
 	{
-		const GLubyte *pImgData = (const GLubyte *)pTexInfo->grInfo.data;
-		INT32 i, j;
+		AllocTextureBuffer(pTexInfo);
+		ptex = tex = textureBuffer;
 
 		for (j = 0; j < h; j++)
 		{
@@ -1454,10 +1459,10 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 			}
 		}
 	}
-	else if (pTexInfo->grInfo.format == GR_TEXFMT_ALPHA_8) // Used for fade masks
+	else if (pTexInfo->format == GL_TEXFMT_ALPHA_8) // Used for fade masks
 	{
-		const GLubyte *pImgData = (const GLubyte *)pTexInfo->grInfo.data;
-		INT32 i, j;
+		AllocTextureBuffer(pTexInfo);
+		ptex = tex = textureBuffer;
 
 		for (j = 0; j < h; j++)
 		{
@@ -1472,12 +1477,10 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 		}
 	}
 	else
-		GL_MSG_Warning ("SetTexture(bad format) %ld\n", pTexInfo->grInfo.format);
+		GL_MSG_Warning("UpdateTexture: bad format %d\n", pTexInfo->format);
 
-
-	// the texture number was already generated by pglGenTextures
-	pglBindTexture(GL_TEXTURE_2D, texnum);
-	tex_downloaded = texnum;
+	pglBindTexture(GL_TEXTURE_2D, num);
+	tex_downloaded = num;
 
 	// disable texture filtering on any texture that has holes so there's no dumb borders or blending issues
 	if (pTexInfo->flags & TF_TRANSPARENT)
@@ -1491,7 +1494,7 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 		pglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
 	}
 
-	if (pTexInfo->grInfo.format == GR_TEXFMT_ALPHA_INTENSITY_88)
+	if (pTexInfo->format == GL_TEXFMT_ALPHA_INTENSITY_88)
 	{
 		//pglTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
 		if (MipMap)
@@ -1517,13 +1520,13 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 		}
 		else
 		{
-			if (updatemipmap)
+			if (update)
 				pglTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
 			else
 				pglTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE_ALPHA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
 		}
 	}
-	else if (pTexInfo->grInfo.format == GR_TEXFMT_ALPHA_8)
+	else if (pTexInfo->format == GL_TEXFMT_ALPHA_8)
 	{
 		//pglTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
 		if (MipMap)
@@ -1549,7 +1552,7 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 		}
 		else
 		{
-			if (updatemipmap)
+			if (update)
 				pglTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
 			else
 				pglTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
@@ -1580,7 +1583,7 @@ EXPORT void HWRAPI(UpdateTexture) (FTextureInfo *pTexInfo)
 		}
 		else
 		{
-			if (updatemipmap)
+			if (update)
 				pglTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
 			else
 				pglTexImage2D(GL_TEXTURE_2D, 0, textureformatGL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, ptex);
@@ -2009,54 +2012,6 @@ static void SkyVertex(vbo_vertex_t *vbo, int r, int c)
 	vbo->z = z;
 }
 
-void RevertStencilBuffer()// TODO need to add OpenGL stencil functions to function importing
-{
-	/*const float screenVerts[12] =
-	{
-		-1.0f, -1.0f, 1.0f,
-		-1.0f, 1.0f, 1.0f,
-		1.0f, 1.0f, 1.0f,
-		1.0f, -1.0f, 1.0f
-	};*/
-
-	const float screenVerts[12] =
-	{
-		-1.0f, -1.0f, 1.0f,
-		1.0f, -1.0f, 1.0f,
-		1.0f, 1.0f, 1.0f,
-		-1.0f, 1.0f, 1.0f
-	};
-
-	pglDisableClientState(GL_TEXTURE_COORD_ARRAY);
-	pglDisable(GL_TEXTURE_2D);
-	pglDisable(GL_DEPTH_TEST);
-	pglDisable(GL_BLEND);
-	//pglColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-	pglColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);// TEST
-
-	//pglStencilFuncSeparate(GL_FRONT_AND_BACK, GL_EQUAL, gl_portal_stencil_level + 1, 0xFF);
-	//pglStencilFuncSeparate(GL_FRONT_AND_BACK, GL_ALWAYS, gl_portal_stencil_level + 1, 0xFF);// TEST
-	//pglStencilOpSeparate(GL_FRONT_AND_BACK, GL_KEEP, GL_DECR, GL_DECR);
-	//pglStencilOpSeparate(GL_FRONT_AND_BACK, GL_KEEP, GL_KEEP, GL_KEEP);// TEST
-
-	pglPushMatrix();
-	pglLoadIdentity();
-	pglScalef(1.0f, 1.0f, -1.0f);
-//	glMatrixMode(GL_PROJECTION
-
-	pglColor4ubv(white);
-	pglVertexPointer(3, GL_FLOAT, 0, screenVerts);
-	pglDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-	pglPopMatrix();
-
-	pglEnableClientState(GL_TEXTURE_COORD_ARRAY);
-	pglEnable(GL_TEXTURE_2D);
-	pglEnable(GL_DEPTH_TEST);
-	pglEnable(GL_BLEND);
-	pglColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-}
-
 static GLSkyVBO sky_vbo;
 
 static void gld_BuildSky(int row_count, int col_count)
@@ -2304,18 +2259,6 @@ EXPORT void HWRAPI(SetSpecialState) (hwdspecialstate_t IdState, INT32 Value)
 		case HWD_SET_SCREEN_TEXTURES:
 			gl_enable_screen_textures = Value;
 			break;
-			
-		case HWD_SET_DEPTH_ONLY_MODE:// for portals
-			if (Value)
-			{
-				pglClear(GL_DEPTH_BUFFER_BIT);
-				pglColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-			}
-			else
-			{
-				pglColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-			}
-			break;
 
 		case HWD_SET_PORTAL_MODE:
 			gl_portal_mode = Value;
@@ -2328,7 +2271,6 @@ EXPORT void HWRAPI(SetSpecialState) (hwdspecialstate_t IdState, INT32 Value)
 					pglEnable(GL_BLEND);
 					pglColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 					pglStencilFuncSeparate(GL_FRONT_AND_BACK, GL_EQUAL, gl_portal_stencil_level, 0xFF);
-					//pglStencilFuncSeparate(GL_FRONT_AND_BACK, GL_GEQUAL, 0, 0xFF);
 					pglStencilOpSeparate(GL_FRONT_AND_BACK, GL_KEEP, GL_KEEP, GL_KEEP);
 					pglDepthMask(GL_TRUE);
 					break;
@@ -2354,8 +2296,6 @@ EXPORT void HWRAPI(SetSpecialState) (hwdspecialstate_t IdState, INT32 Value)
 					break;
 				case HWD_PORTAL_DEPTH_SEGS:
 					// draw only to depth, only to current level of stencil
-					// also revert last stencil buffer write at this point
-					//RevertStencilBuffer();
 					pglDisable(GL_TEXTURE_2D);
 					pglEnable(GL_DEPTH_TEST);
 					pglDisable(GL_BLEND);
@@ -2906,14 +2846,10 @@ EXPORT INT32  HWRAPI(GetTextureUsed) (void)
 		// I don't know which one the game actually _uses_ but this
 		// follows format2bpp in hw_cache.c
 		int bpp = 1;
-		int format = tmp->grInfo.format;
-		if (format == GR_RGBA)
+		int format = tmp->format;
+		if (format == GL_TEXFMT_RGBA)
 			bpp = 4;
-		else if (format == GR_TEXFMT_RGB_565
-			|| format == GR_TEXFMT_ARGB_1555
-			|| format == GR_TEXFMT_ARGB_4444
-			|| format == GR_TEXFMT_ALPHA_INTENSITY_88
-			|| format == GR_TEXFMT_AP_88)
+		else if (format == GL_TEXFMT_ALPHA_INTENSITY_88 || format == GL_TEXFMT_AP_88)
 			bpp = 2;
 
 		// Add it up!
