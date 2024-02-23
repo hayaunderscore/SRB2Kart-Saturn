@@ -61,6 +61,8 @@ extern RGBA_t *pLocalPalette;
 
 extern UINT8 hudtrans;
 
+void V_CubeApply(UINT8 *red, UINT8 *green, UINT8 *blue);
+
 // Retrieve the ARGB value from a palette color index
 #define V_GetColor(color) (pLocalPalette[color&0xFF])
 
@@ -207,6 +209,8 @@ void V_DrawStringAtFixed(fixed_t x, fixed_t y, INT32 option, const char *string)
 
 void V_DrawSmallStringAtFixed(fixed_t x, fixed_t y, INT32 option, const char *string);
 void V_DrawCenteredSmallStringAtFixed(fixed_t x, fixed_t y, INT32 option, const char *string);
+
+void V_DrawThinStringAtFixed(fixed_t x, fixed_t y, INT32 option, const char *string);
 
 // Draw tall nums, used for menu, HUD, intermission
 void V_DrawTallNum(INT32 x, INT32 y, INT32 flags, INT32 num);
