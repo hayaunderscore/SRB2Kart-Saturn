@@ -161,7 +161,6 @@ consvar_t cv_grfakecontrast = {"gr_fakecontrast", "Standard", CV_SAVE, grfakecon
 consvar_t cv_grslopecontrast = {"gr_slopecontrast", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
 
 consvar_t cv_grhorizonlines = {"gr_horizonlines", "On", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL}; 
-
  
 #define ONLY_IF_GL_LOADED if (vid.glstate != VID_GL_LIBRARY_LOADED) return;
 
@@ -2669,7 +2668,7 @@ void HWR_ProcessSeg(void) // Sort of like GLWall::Process in GZDoom
 					if (rover->flags & FF_TRANSLUCENT && rover->alpha < 256)
 					{
 						blendmode = PF_Translucent;
-						Surf.PolyColor.s.alpha = (UINT8)rover->alpha-1 > 255 ? 255 : rover->alpha-1;
+						Surf.PolyColor.s.alpha = max(0, min(rover->alpha, 255));
 					}
 
 					if (gr_backsector->numlights)
@@ -2880,8 +2879,16 @@ void HWR_AddLine(seg_t *line)
 	}
 
 	// OPTIMIZE: quickly reject orthogonal back sides.
-	angle1 = R_PointToAngle64(v1x, v1y);
-	angle2 = R_PointToAngle64(v2x, v2y);
+	if (cv_pointoangleexor64.value)
+	{
+		angle1 = R_PointToAngle64(v1x, v1y);
+		angle2 = R_PointToAngle64(v2x, v2y);
+	}
+	else
+	{
+		angle1 = R_PointToAngleEx(viewx, viewy, v1x, v1y);
+		angle2 = R_PointToAngleEx(viewx, viewy, v2x, v2y);
+	}
 
 	// do an extra culling check when rendering portals
 	// check if any line vertex is on the viewable side of the portal target line
@@ -3076,8 +3083,17 @@ boolean HWR_CheckBBox(fixed_t *bspcoord)
 		if (mindist > current_bsp_culling_distance) return false;
 	}
 
-	angle1 = R_PointToAngle64(px1, py1);
-	angle2 = R_PointToAngle64(px2, py2);
+	if (cv_pointoangleexor64.value)
+	{
+		angle1 = R_PointToAngle64(px1, py1);
+		angle2 = R_PointToAngle64(px2, py2);
+	}
+	else
+	{
+		angle1 = R_PointToAngleEx(viewx, viewy, px1, py1);
+		angle2 = R_PointToAngleEx(viewx, viewy, px2, py2);
+	}
+
 	return gld_clipper_SafeCheckRange(angle2, angle1);
 }
 
@@ -4113,8 +4129,10 @@ static void HWR_RotateSpritePolyToAim(gr_vissprite_t *spr, FOutVector *wallVerts
 		interpmobjstate_t interp = {0};
 		float basey, lowy;
 
+		INT32 dist = R_QuickCamDist(spr->mobj->x, spr->mobj->y);
+
 		// do interpolation
-		if (R_UsingFrameInterpolation() && !paused)
+		if (R_UsingFrameInterpolation() && !paused && (!cv_grmaxinterpdist.value || dist < cv_grmaxinterpdist.value))
 		{
 			if (precip)
 			{
@@ -5330,7 +5348,9 @@ void HWR_ProjectSprite(mobj_t *thing)
 	if (!thing)
 		return;
 
-	if (R_UsingFrameInterpolation() && !paused)
+	INT32 dist = R_QuickCamDist(thing->x, thing->y);
+
+	if (R_UsingFrameInterpolation() && !paused && (!cv_grmaxinterpdist.value || dist < cv_grmaxinterpdist.value))
 	{
 		R_InterpolateMobjState(thing, rendertimefrac, &interp);
 	}
@@ -5670,12 +5690,14 @@ void HWR_ProjectPrecipitationSprite(precipmobj_t *thing)
 
 	if (!thing)
 		return;
-	
+
+	INT32 dist = R_QuickCamDist(thing->x, thing->y);
+
 	// uncapped/interpolation
 	interpmobjstate_t interp = {0};
 
 	// do interpolation
-	if (R_UsingFrameInterpolation() && !paused)
+	if (R_UsingFrameInterpolation() && !paused && (!cv_grmaxinterpdist.value || dist < cv_grmaxinterpdist.value))
 	{
 		R_InterpolatePrecipMobjState(thing, rendertimefrac, &interp);
 	}
@@ -5952,8 +5974,16 @@ static void HWR_PortalClipping(gl_portal_t *portal)
 
 	line_t *line = &lines[portal->clipline];
 
-	angle1 = R_PointToAngle64(line->v1->x, line->v1->y);
-	angle2 = R_PointToAngle64(line->v2->x, line->v2->y);
+	if (cv_pointoangleexor64.value)
+	{
+		angle1 = R_PointToAngle64(line->v1->x, line->v1->y);
+		angle2 = R_PointToAngle64(line->v2->x, line->v2->y);
+	}
+	else
+	{
+		angle1 = R_PointToAngleEx(viewx, viewy, line->v1->x, line->v1->y);
+		angle2 = R_PointToAngleEx(viewx, viewy, line->v2->x, line->v2->y);
+	}
 
 	// clip things that are not inside the portal window from our viewpoint
 	gld_clipper_SafeAddClipRange(angle2, angle1);
@@ -6668,7 +6698,7 @@ void HWR_MakeScreenFinalTexture(void)
 	HWD.pfnMakeScreenTexture(HWD_SCREENTEXTURE_GENERIC2);
 }
 
-void HWR_DrawScreenFinalTexture(int width, int height)
+void HWR_DrawScreenFinalTexture(INT32 width, INT32 height)
 {
 	HWD.pfnDrawScreenFinalTexture(HWD_SCREENTEXTURE_GENERIC2, width, height);
 }
