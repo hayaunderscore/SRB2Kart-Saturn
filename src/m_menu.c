@@ -367,7 +367,6 @@ menu_t OP_AdvancedBirdDef;
 
 // Chaotic
 menu_t OP_NametagDef;
-//menu_t OP_OGLShadowsDef;
 
 #define numaddonsshown 4
 
@@ -1979,8 +1978,6 @@ static menuitem_t OP_SaturnMenu[] =
 	{IT_STRING | IT_CVAR, NULL, "Show Localskin Menus", 				&cv_showlocalskinmenus, 	85},
 	{IT_STRING | IT_SUBMENU, NULL, "Nametags...", 						&OP_NametagDef, 			90},
 
-	{IT_STRING | IT_CVAR, NULL, "Native keyboard layout", 				&cv_nativekeyboard, 		95},
-
 	{IT_STRING | IT_CVAR, NULL, "Less Midnight Channel Flicker", 		&cv_lessflicker, 		 	105},
 
 	{IT_SUBMENU|IT_STRING,	NULL,	"Sprite Distortion...", 			&OP_PlayerDistortDef,	 	115},
@@ -2007,7 +2004,6 @@ static const char* OP_SaturnTooltips[] =
 	"Show the big Cecho Messages.",
 	"Show Localskin Menus.",
 	"Nametag Options.",
-	"Use your native Keyboard Layout.",
 	"Disables the flicker effect on Midnight Channel.",
 	"Options for sprite distortion effects.",
 	"Move position of HUD elements.",
@@ -2032,7 +2028,6 @@ enum
 	sm_cechotogle,
 	sm_showlocalskin,
 	sm_nametagmen,
-	sm_nativkey,
 	sm_pisschannel,
 	sm_distortionmenu,
 	sm_hudoffsets,
@@ -2242,6 +2237,8 @@ static menuitem_t OP_NametagMenu[] =
 	{IT_STRING | IT_CVAR, NULL, "Nametag Restat", &cv_nametagrestat, 80},
 	{IT_STRING | IT_CVAR, NULL, "Nametag Hop", &cv_nametaghop, 90},
 	{IT_STRING | IT_CVAR, NULL, "Small Nametags", &cv_smallnametags, 100},
+	{IT_STRING | IT_CVAR, NULL, "Show Nametags after Race finish", &cv_shownametagfinish, 110},
+	{IT_STRING | IT_CVAR, NULL, "Show Nametags in Spectator Mode", &cv_shownametagspectator, 130},
 	//{IT_STRING | IT_CVAR, NULL, "Nametag Scaling", &cv_nametagscaling, 70}
 };
 
@@ -2258,6 +2255,8 @@ static const char* OP_NametagTooltips[] =
 	"Show stats in nametags.",
 	"Enable Saltyhop support for nametags.",
 	"Alternative smaller nametags.",
+	"Show Nametags after Race finish.",
+	"Show Nametags when you are spectating.",
 };
 
 enum
@@ -2273,6 +2272,8 @@ enum
 	nt_ntrestat,
 	nt_nthop,
 	nt_smol,
+	nt_finish,
+	nt_spec,
 };
 
 

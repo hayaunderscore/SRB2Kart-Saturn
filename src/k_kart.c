@@ -8911,8 +8911,8 @@ static void K_GetScreenCoords(vector2_t *vec, player_t *player, camera_t *came, 
 	fixed_t fovratio;
 	fixed_t offset;
 	boolean srcflip;
-	long y;
-	long x;
+	fixed_t y;
+	fixed_t x;
 
     // In case of early return we can check if those are negative
     vec->x = -1;
@@ -8975,8 +8975,8 @@ static void K_GetScreenCoords(vector2_t *vec, player_t *player, camera_t *came, 
 		x = FixedMul(x, FINECOSINE((yang>>ANGLETOFINESHIFT) & FINEMASK)); // perspective
 		y = -camaiming - FixedDiv(yang, distfact);
 
-		//if ((fixed_t)y < ANGLE_270 || (fixed_t)y > ANGLE_90) // clip points behind the camera
-		//	return;
+		if (y < (fixed_t)ANGLE_270 || y > (fixed_t)ANGLE_90) // clip points behind the camera
+			return;
 		if (splitscreen == 1) // multiply by 1.25 for 2P splitscreen
 			y = y + (y/4) ;
 		if (srcflip) // flipcam
@@ -9035,8 +9035,9 @@ static void K_drawNameTags(void)
 	int tagsdisplayed = 0;
 	char *tag;
 	patch_t *icon;
+	INT32 hudtransflag = V_LocalTransFlag();
 
-	if (!stplyr->mo || stplyr->spectator || splitscreen)
+	if (!stplyr->mo || (stplyr->spectator && !cv_shownametagspectator.value) || splitscreen || (stplyr->exiting && !cv_shownametagfinish.value))
 		return;
 
 	for (i = 0; i < MAXPLAYERS; i++)
@@ -9059,16 +9060,8 @@ static void K_drawNameTags(void)
 		distance = R_PointToDist(players[i].mo->x, players[i].mo->y);
 		if (distance > maxdistance)
 			continue;
-		an = R_PointToAngle2(camera[0].x, camera[0].y, players[i].mo->x, players[i].mo->y) - camera[0].angle;
-		if (an > ANGLE_90 && an < ANGLE_270)
-			continue; // behind back
 		if (!P_CheckSight(stplyr->mo, players[i].mo))
 			continue;
-		
-		tagsdisplayed += 1;
-			
-		if (tagsdisplayed > cv_nametagmaxplayers.value)
-			break;
 
 		switch (cv_nametagtrans.value)
 		{
@@ -9099,7 +9092,7 @@ static void K_drawNameTags(void)
 				trans =  V_40TRANS;
 				break;
 			case 4:
-				trans = V_HUDTRANS;
+				trans = hudtransflag;
 				break;
 			default:
 				break;
@@ -9108,6 +9101,15 @@ static void K_drawNameTags(void)
 		dup = vid.dupx;
 
 		K_GetScreenCoords(&pos, stplyr, camera, players[i].mo->x, players[i].mo->y, players[i].mo->z + players[i].mo->height);
+		
+		//Check for negative screencoords
+		if (pos.x == -1 || pos.y == -1)
+			continue;
+
+		tagsdisplayed += 1;
+
+		if (tagsdisplayed > cv_nametagmaxplayers.value)
+			break;
 
 		//Flipcam off
 		if (players[i].mo->eflags & MFE_VERTICALFLIP && !(players[i].pflags & PF_FLIPCAM))
@@ -9217,7 +9219,7 @@ static void K_drawNameTags(void)
 			}
 
 			if (cv_nametagfacerank.value)
-			{	
+			{
 				V_DrawMappedPatch(namex, namey - dup*(icon->height+1), vflags, icon, cm);
 				namex += dup*(icon->height+1); // add offset to other stuff
 			}
@@ -10329,7 +10331,12 @@ void K_drawKartHUD(void)
 		K_drawKartItem();
 		
 	if (cv_nametag.value)
+	{
+#ifdef HAVE_BLUA
+	if (LUA_HudEnabled(hud_nametags))
+#endif
 		K_drawNameTags();
+	}
 
 	// If not splitscreen, draw...
 	if (!splitscreen && !demo.title)
