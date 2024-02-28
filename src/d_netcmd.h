@@ -191,6 +191,11 @@ extern consvar_t cv_shownametagspectator;
 #define SKINSELECTSPIN_PAIN 25
 extern consvar_t cv_skinselectspin;
 
+extern consvar_t cv_driftgauge;
+extern consvar_t cv_driftgaugeofs;
+extern consvar_t cv_driftgaugetrans;
+extern consvar_t cv_driftgaugestyle;
+
 extern consvar_t cv_perfstats;
 extern consvar_t cv_ps_thinkframe_page;
 extern consvar_t cv_ps_samplesize;

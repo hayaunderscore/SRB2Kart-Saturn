@@ -7033,6 +7033,11 @@ static patch_t *nametagline;
 static patch_t *nametagspeed;
 static patch_t *nametagweight;
 
+static patch_t *driftgauge;
+static patch_t *driftgaugecolor;
+static patch_t *driftgaugesmall;
+static patch_t *driftgaugesmallcolor;
+
 static patch_t *kp_yougotem;
 
 static patch_t *skp_smallsticker;
@@ -7128,6 +7133,13 @@ void K_LoadKartHUDGraphics(void)
 		nametagline = W_CachePatchName("NTLINEV", PU_HUDGFX);
 		nametagspeed = W_CachePatchName("NTSP", PU_HUDGFX);
 		nametagweight = W_CachePatchName("NTWH", PU_HUDGFX);
+	}
+	
+	if (driftgaugegfx){
+		driftgauge =  W_CachePatchName("K_DGAU", PU_HUDGFX);
+		driftgaugecolor =  W_CachePatchName("K_DCAU", PU_HUDGFX);
+		driftgaugesmall =  W_CachePatchName("K_DGSU", PU_HUDGFX);
+		driftgaugesmallcolor =  W_CachePatchName("K_DCSU", PU_HUDGFX);
 	}
 
 	// Starting countdown
@@ -9012,7 +9024,30 @@ static void K_GetScreenCoords(vector2_t *vec, player_t *player, camera_t *came, 
 
 	// project the angle to get our final X coordinate
 	x = FixedMul(FINETANGENT(((x+ANGLE_90)>>ANGLETOFINESHIFT) & 4095), fov);
+	if (splitscreen == 1) // divide by 320/200 (1.6) on 2P splitscreen
+		x = (x/2) + (x/8); 
 	x = x + xres;
+	
+	
+	// get splitscreen index
+	int splitindex = stplyrnum;
+
+	// adjust coords for splitscreen
+	if (splitscreen == 1){ // 2P
+		y = y>>1;
+		if (splitindex)
+			y = y + yres;
+	}
+	if (splitscreen >= 2) { // 3P or 4P
+		x = x>>1;
+		y = y>>1;
+		if (splitindex & 1)
+			x = x + xres;
+		if (splitindex >= 2)
+			y = y + yres;
+	}
+	
+	
 
 	vec->y = y;
 	vec->x = x;
@@ -9045,8 +9080,7 @@ static void K_drawNameTags(void)
 		UINT8 *cm;
 		fixed_t distance = 0;
 		fixed_t maxdistance = (10*cv_nametagdist.value)* mapobjectscale;
-		angle_t an;
-		
+
 		if (i > PLAYERSMASK)
 			continue;
 		if (!players[i].mo || P_MobjWasRemoved(players[i].mo) || players[i].spectator || !playeringame[i])
@@ -9101,7 +9135,7 @@ static void K_drawNameTags(void)
 		dup = vid.dupx;
 
 		K_GetScreenCoords(&pos, stplyr, camera, players[i].mo->x, players[i].mo->y, players[i].mo->z + players[i].mo->height);
-		
+
 		//Check for negative screencoords
 		if (pos.x == -1 || pos.y == -1)
 			continue;
@@ -9113,11 +9147,11 @@ static void K_drawNameTags(void)
 
 		//Flipcam off
 		if (players[i].mo->eflags & MFE_VERTICALFLIP && !(players[i].pflags & PF_FLIPCAM))
-			pos.y += players[i].mo->height; 
+			pos.y += players[i].mo->height;
 
 		//Flipcam on
 		if (players[i].mo->eflags & MFE_VERTICALFLIP && (players[i].pflags & PF_FLIPCAM))
-			pos.y -= ((30*dup)<<FRACBITS); 
+			pos.y -= ((30*dup)<<FRACBITS);
 
 		//Flipcam off
 		if (players[i].mo->eflags & MFE_VERTICALFLIP && !(players[i].pflags & PF_FLIPCAM))
@@ -9150,13 +9184,13 @@ static void K_drawNameTags(void)
 			{
 				if (cv_nametagfacerank.value)
 					tagwidthsmall += icon->width - dup;
-				
+
 				// Have to draw the nametag using patches here since drawfill can't draw at this scale...
 				if (!flipped)
 					V_DrawFixedPatch(namex<<FRACBITS, namey<<FRACBITS, FRACUNIT/2, vflags, nametagline, cm);
 				V_DrawStretchyFixedPatch(((namex+dup*3)<<FRACBITS), namey<<FRACBITS,
 					tagwidthsmall<<FRACBITS, FRACUNIT/2, vflags, nametagpic, cm);
-				
+
 				namex += dup*2;
 				namey -= dup*4;
 			}
@@ -9175,7 +9209,7 @@ static void K_drawNameTags(void)
 				V_DrawSmallString(namex, namey - dup*5, vflags, va("\x84S%d ", players[i].kartspeed));
 				V_DrawSmallString(namex + dup*10, namey - dup*5, vflags, va("\x87W%d ", players[i].kartweight));
 			}
-			
+
 			if (cv_nametagscore.value)
 			{
 				if ((cv_nametagrestat.value == 1 && (players[i].kartspeed != skins[players[i].skin].kartspeed || players[i].kartweight != skins[players[i].skin].kartweight)) || cv_nametagrestat.value == 2)
@@ -9242,6 +9276,144 @@ static void K_drawNameTags(void)
 					V_DrawSmallString(namex, namey - dup*15, V_ALLOWLOWERCASE | vflags, va("\x8A%d ", players[i].score));
 			}
 		}
+	}
+}
+
+// Based on Driftgauge refactor by GenericHeroGuy ported from lua and expanded by NepDisk
+static void K_drawDriftGauge(void)
+{
+	INT32 driftval = K_GetKartDriftSparkValue(stplyr);
+	INT32 driftcharge = min(driftval*4, stplyr->kartstuff[k_driftcharge]);
+	vector2_t pos = {0};
+	fixed_t basex,basey;
+	INT32 drifttrans = 0;
+	INT32 hudtransflag = V_LocalTransFlag();
+	int dup = vid.dupx;
+	int i,j;
+
+	UINT8 driftcolors[3][4] = {
+		{0, 0, 10, 16},       // no drift
+		{215, 215, 204, 253}, // blue
+		{125, 125, 151, 159}  // red
+	};
+
+	UINT8 driftskins[3] = {
+		SKINCOLOR_NONE,
+		SKINCOLOR_TEAL,
+		SKINCOLOR_SALMON,
+	};
+
+	UINT8 driftrainbow[18] = {
+		0, 31, 47, 63, 79, 95, 111, 119, 127, 143, 159, 175, 183, 191, 199, 207, 223, 247
+	};
+
+	if (!stplyr->mo || !stplyr->kartstuff[k_drift] || (!splitscreen && !camera->chase))
+		return;
+
+	if (!splitscreen)
+		K_GetScreenCoords(&pos, stplyr, camera, stplyr->mo->x, stplyr->mo->y, stplyr->mo->z+FixedMul(cv_driftgaugeofs.value, cv_driftgaugeofs.value > 0 ? stplyr->mo->scale : mapobjectscale));
+	else
+	{
+		//Loop through each player camera for splitscreen.
+		for (j = 0; j <= stplyrnum; j++)
+			K_GetScreenCoords(&pos, stplyr, &camera[j], stplyr->mo->x, stplyr->mo->y, stplyr->mo->z+FixedMul(cv_driftgaugeofs.value, cv_driftgaugeofs.value > 0 ? stplyr->mo->scale : mapobjectscale));
+	}
+
+	//Check for negative screencoords
+	if (pos.x == -1 || pos.y == -1)
+		return;
+
+	//Flipcam on
+	if (stplyr->mo->eflags & MFE_VERTICALFLIP && (stplyr->pflags & PF_FLIPCAM))
+		pos.y += ((25*dup)<<FRACBITS); 
+
+	basex = pos.x>>FRACBITS; 
+	basey = pos.y>>FRACBITS;
+
+	fixed_t barx;
+	fixed_t bary;
+	INT32 BAR_WIDTH;
+
+	if (cv_driftgaugetrans.value)
+		drifttrans = hudtransflag;
+	else
+		drifttrans = 0;
+
+	switch (cv_driftgaugestyle.value)
+	{
+		case 1:
+		case 2:
+		case 3:
+			if (driftgaugegfx)
+			{
+				if (cv_driftgaugestyle.value == 1 || cv_driftgaugestyle.value == 3)
+				{
+					barx = basex - dup*23;
+					BAR_WIDTH = dup*47;
+				}
+				else
+				{
+					barx = basex - dup*12;
+					BAR_WIDTH = dup*23;
+				}
+
+				bary = basey - dup*2;
+
+				INT32 limit = driftval * (driftcharge >= driftval*2 ? 2 : 1);
+				INT32 width = ((driftcharge - (driftcharge >= driftval ? limit : 0)) * BAR_WIDTH) / limit;
+				INT32 level = min(driftcharge / driftval, 2);
+				UINT8 *cmap;
+
+				if (!K_UseColorHud())
+					V_DrawMappedPatch(cv_driftgaugestyle.value == 2 ? basex + dup*11 : basex, basey, V_NOSCALESTART|V_OFFSET|drifttrans, cv_driftgaugestyle.value == 2 ? driftgaugesmall : driftgauge, NULL);
+				else //Colourized hud
+				{
+					UINT8 *colormap = R_GetTranslationColormap(TC_DEFAULT, K_GetHudColor(), GTC_CACHE);
+					V_DrawMappedPatch(cv_driftgaugestyle.value == 2 ? basex + dup*11 : basex, basey, V_NOSCALESTART|V_OFFSET|drifttrans, cv_driftgaugestyle.value == 2 ? driftgaugesmallcolor : driftgaugecolor, colormap);
+				}
+
+				if (driftcharge >= driftval*4) // rainbow sparks
+				{
+					cmap = R_GetTranslationColormap(TC_RAINBOW, 1 + leveltime % (MAXSKINCOLORS-1),GTC_CACHE);
+					for	(i = 0; i < 4; i++)
+					{
+						V_DrawFill(barx, bary+dup*1+dup*i, BAR_WIDTH, dup, (driftrainbow[(leveltime % 18) + 1] + i*2) | V_NOSCALESTART|drifttrans);
+					}
+				}
+				else // none/blue/red
+				{
+					cmap =  R_GetTranslationColormap(TC_RAINBOW, driftskins[level],GTC_CACHE);
+					for	(i = 0; i < 4; i++)
+					{
+						if (driftcharge >= driftval)
+							V_DrawFill(barx, bary+dup*1+dup*i, BAR_WIDTH, dup, driftcolors[level-1][i] | V_NOSCALESTART|drifttrans);
+
+						V_DrawFill(barx, bary+dup*1+dup*i, width, dup, driftcolors[level][i] | V_NOSCALESTART|drifttrans);
+					}
+				}
+
+				// right, also draw a cool number
+				//SG_DrawPaddedNum(v, basex + (dup*32), basey, driftcharge*100 / driftval, 3, "PINGN", V_NOSCALESTART|V_OFFSET|drifttrans, cmap)
+				if (cv_driftgaugestyle.value == 3)
+					V_DrawPaddedTallColorNum(basex + (dup*32), basey, V_NOSCALESTART|V_OFFSET|drifttrans, driftcharge*100 / driftval, 3, cmap);
+				else
+					V_DrawPingNum(cv_driftgaugestyle.value == 2 ? basex + (dup*22) : basex + (dup*32), basey, V_NOSCALESTART|V_OFFSET|drifttrans, driftcharge*100 / driftval, cmap);
+			}
+			break;
+		case 4:
+			{
+				UINT8 *cmap;
+				INT32 level = min(driftcharge / driftval, 2);
+				if (driftcharge >= driftval*4)
+					cmap = R_GetTranslationColormap(TC_RAINBOW, 1 + leveltime % (MAXSKINCOLORS-1),GTC_CACHE);
+				else
+					cmap =  R_GetTranslationColormap(TC_RAINBOW, driftskins[level],GTC_CACHE);
+
+				V_DrawPaddedTallColorNum(basex + (dup*16), basey, V_NOSCALESTART|V_OFFSET|drifttrans, driftcharge*100 / driftval, 3, cmap);
+			}
+			break;
+		default:
+			break;
 	}
 }
 
@@ -10328,8 +10500,16 @@ void K_drawKartHUD(void)
 #ifdef HAVE_BLUA
 	if (LUA_HudEnabled(hud_item) && !freecam)
 #endif
-		K_drawKartItem();
-		
+		K_drawKartItem();	
+
+	if (cv_driftgauge.value && !modeattacking)
+	{
+#ifdef HAVE_BLUA
+	if (LUA_HudEnabled(hud_driftgauge))
+#endif
+		K_drawDriftGauge();
+	}
+
 	if (cv_nametag.value)
 	{
 #ifdef HAVE_BLUA

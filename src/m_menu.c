@@ -368,6 +368,9 @@ menu_t OP_AdvancedBirdDef;
 // Chaotic
 menu_t OP_NametagDef;
 
+//Driftgauge
+menu_t OP_DriftGaugeDef;
+
 #define numaddonsshown 4
 
 // Replay hut
@@ -1974,16 +1977,18 @@ static menuitem_t OP_SaturnMenu[] =
 	{IT_STRING | IT_CVAR, NULL, "Show Lap Emblem",		 				&cv_showlapemblem, 	 		60},
 	{IT_STRING | IT_CVAR, NULL,	"Show Minimap Names",   				&cv_showminimapnames, 		65},
 	{IT_STRING | IT_CVAR, NULL,	"Small Minimap Players",   				&cv_minihead, 				70},
+	
 	{IT_STRING | IT_CVAR, NULL, "Show Cecho Messages", 					&cv_cechotoggle, 			80},
 	{IT_STRING | IT_CVAR, NULL, "Show Localskin Menus", 				&cv_showlocalskinmenus, 	85},
 	{IT_STRING | IT_SUBMENU, NULL, "Nametags...", 						&OP_NametagDef, 			90},
+	{IT_STRING | IT_SUBMENU, NULL, "Driftgauge...", 					&OP_DriftGaugeDef, 			95},
 
-	{IT_STRING | IT_CVAR, NULL, "Less Midnight Channel Flicker", 		&cv_lessflicker, 		 	105},
+	{IT_STRING | IT_CVAR, NULL, "Less Midnight Channel Flicker", 		&cv_lessflicker, 		 	115},
 
-	{IT_SUBMENU|IT_STRING,	NULL,	"Sprite Distortion...", 			&OP_PlayerDistortDef,	 	115},
-	{IT_SUBMENU|IT_STRING,	NULL,	"Hud Offsets...", 					&OP_HudOffsetDef,		 	120},
+	{IT_SUBMENU|IT_STRING,	NULL,	"Sprite Distortion...", 			&OP_PlayerDistortDef,	 	125},
+	{IT_SUBMENU|IT_STRING,	NULL,	"Hud Offsets...", 					&OP_HudOffsetDef,		 	130},
 
-	{IT_SUBMENU|IT_STRING,	NULL,	"Saturn Credits", 					&OP_SaturnCreditsDef,		130}, // uwu
+	{IT_SUBMENU|IT_STRING,	NULL,	"Saturn Credits", 					&OP_SaturnCreditsDef,		140}, // uwu
 };
 
 static const char* OP_SaturnTooltips[] =
@@ -2004,6 +2009,7 @@ static const char* OP_SaturnTooltips[] =
 	"Show the big Cecho Messages.",
 	"Show Localskin Menus.",
 	"Nametag Options.",
+	"Driftgauge Options.",
 	"Disables the flicker effect on Midnight Channel.",
 	"Options for sprite distortion effects.",
 	"Move position of HUD elements.",
@@ -2028,6 +2034,7 @@ enum
 	sm_cechotogle,
 	sm_showlocalskin,
 	sm_nametagmen,
+	sm_driftgaugemen,
 	sm_pisschannel,
 	sm_distortionmenu,
 	sm_hudoffsets,
@@ -2227,20 +2234,21 @@ static menuitem_t OP_ForkedBirdMenu[] =
 static menuitem_t OP_NametagMenu[] =
 {
 	{IT_HEADER, NULL, "Nametag", NULL, 0},
-	{IT_STRING | IT_CVAR, NULL, "Nametag", &cv_nametag, 10},
-	{IT_STRING | IT_CVAR, NULL, "Show Char image in Nametag", &cv_nametagfacerank, 20},
-	{IT_STRING | IT_CVAR, NULL, "Show Own Nametag", &cv_showownnametag, 30},
-	{IT_STRING | IT_CVAR, NULL, "Nametag Max distance", &cv_nametagdist, 40},
-	{IT_STRING | IT_CVAR, NULL, "Nametag Max Display Players", &cv_nametagmaxplayers, 50},
-	{IT_STRING | IT_CVAR, NULL, "Nametag Transparency", &cv_nametagtrans, 60},
-	{IT_STRING | IT_CVAR, NULL, "Nametag Score", &cv_nametagscore, 70},
-	{IT_STRING | IT_CVAR, NULL, "Nametag Restat", &cv_nametagrestat, 80},
-	{IT_STRING | IT_CVAR, NULL, "Nametag Hop", &cv_nametaghop, 90},
-	{IT_STRING | IT_CVAR, NULL, "Small Nametags", &cv_smallnametags, 100},
-	{IT_STRING | IT_CVAR, NULL, "Show Nametags after Race finish", &cv_shownametagfinish, 110},
+	{IT_STRING | IT_CVAR, NULL, "Nametag", &cv_nametag, 20},
+	{IT_STRING | IT_CVAR, NULL, "Show Char image in Nametag", &cv_nametagfacerank, 30},
+	{IT_STRING | IT_CVAR, NULL, "Show Own Nametag", &cv_showownnametag, 40},
+	{IT_STRING | IT_CVAR, NULL, "Nametag Max distance", &cv_nametagdist, 50},
+	{IT_STRING | IT_CVAR, NULL, "Nametag Max Display Players", &cv_nametagmaxplayers, 60},
+	{IT_STRING | IT_CVAR, NULL, "Nametag Transparency", &cv_nametagtrans, 70},
+	{IT_STRING | IT_CVAR, NULL, "Nametag Score", &cv_nametagscore, 80},
+	{IT_STRING | IT_CVAR, NULL, "Nametag Restat", &cv_nametagrestat, 90},
+	{IT_STRING | IT_CVAR, NULL, "Nametag Hop", &cv_nametaghop, 100},
+	{IT_STRING | IT_CVAR, NULL, "Small Nametags", &cv_smallnametags, 110},
+	{IT_STRING | IT_CVAR, NULL, "Show Nametags after Race finish", &cv_shownametagfinish, 120},
 	{IT_STRING | IT_CVAR, NULL, "Show Nametags in Spectator Mode", &cv_shownametagspectator, 130},
 	//{IT_STRING | IT_CVAR, NULL, "Nametag Scaling", &cv_nametagscaling, 70}
 };
+
 
 static const char* OP_NametagTooltips[] =
 {
@@ -2276,6 +2284,33 @@ enum
 	nt_spec,
 };
 
+
+static menuitem_t OP_DriftGaugeMenu[] =
+{
+	{IT_HEADER, NULL, "Driftgauge", NULL, 0},
+	{IT_STRING | IT_CVAR, NULL, "Driftgauge", &cv_driftgauge, 20},
+	{IT_STRING | IT_CVAR, NULL, "Driftgauge Transparency", &cv_driftgaugetrans, 30},
+	{IT_STRING | IT_CVAR, NULL, "Driftgauge Offset", &cv_driftgaugeofs, 40},
+	{IT_STRING | IT_CVAR, NULL, "Driftgauge Style", &cv_driftgaugestyle, 50},
+};
+
+static const char* OP_DriftGaugeTooltips[] =
+{
+	NULL,
+	"Enable driftgauge in game.",
+	"Have driftgauge use hud transparency.",
+	"Vertical driftgauge offset.",
+	"Driftgauge style.",
+};
+
+enum
+{
+	dg_header,
+	dg_dg,
+	dg_dgtrans,
+	dg_dgoffset,
+	dg_dgstyle,
+};
 
 
 static menuitem_t OP_TiltMenu[] =
@@ -2830,7 +2865,9 @@ menu_t OP_HudOffsetDef = DEFAULTSCROLLSTYLE(NULL, OP_HudOffsetMenu, &OP_SaturnDe
 menu_t OP_SaturnCreditsDef = DEFAULTMENUSTYLE(NULL, OP_SaturnCreditsMenu, &OP_SaturnDef, 30, 10);
 
 menu_t OP_BirdDef = DEFAULTMENUSTYLE(NULL, OP_BirdMenu, &OP_MainDef, 30, 30);
-menu_t OP_NametagDef = DEFAULTMENUSTYLE(NULL, OP_NametagMenu, &OP_SaturnDef, 30, 60);
+menu_t OP_NametagDef = DEFAULTMENUSTYLE(NULL, OP_NametagMenu, &OP_SaturnDef, 30, 40);
+
+menu_t OP_DriftGaugeDef = DEFAULTMENUSTYLE(NULL, OP_DriftGaugeMenu, &OP_SaturnDef, 30, 60);
 
 menu_t OP_TiltDef = DEFAULTMENUSTYLE(NULL, OP_TiltMenu, &OP_BirdDef, 30, 60);
 menu_t OP_AdvancedBirdDef = DEFAULTMENUSTYLE(NULL, OP_AdvancedBirdMenu, &OP_BirdDef, 30, 60);
@@ -3171,12 +3208,6 @@ void Saturn_menu_Onchange(void)
 	
 	OP_SaturnMenu[sm_coloritem].status = status;
 	OP_SaturnMenu[sm_colorhud_customcolor].status = status;
-}
-
-void Nametag_menu_Onchange(void) 
-{
-	if (cv_smallnametags.value || (!nametaggfx))
-		OP_NametagMenu[nt_ntchar].status = IT_GRAYEDOUT;
 }
 
 // ==========================================================================
@@ -5051,6 +5082,16 @@ static void M_DrawGenericMenu(void)
 		if (!(OP_NametagTooltips[itemOn] == NULL)) 
 		{
 			M_DrawSplitText(BASEVIDWIDTH / 2, BASEVIDHEIGHT-50, V_ALLOWLOWERCASE|V_SNAPTOBOTTOM, OP_NametagTooltips[itemOn], 30, coolalphatimer);
+			if (coolalphatimer > 0 && interpTimerHackAllow)
+				coolalphatimer--;
+		}
+	}
+	
+	if (currentMenu == &OP_DriftGaugeDef)
+	{
+		if (!(OP_DriftGaugeTooltips[itemOn] == NULL)) 
+		{
+			M_DrawSplitText(BASEVIDWIDTH / 2, BASEVIDHEIGHT-50, V_ALLOWLOWERCASE|V_SNAPTOBOTTOM, OP_DriftGaugeTooltips[itemOn], 30, coolalphatimer);
 			if (coolalphatimer > 0 && interpTimerHackAllow)
 				coolalphatimer--;
 		}
