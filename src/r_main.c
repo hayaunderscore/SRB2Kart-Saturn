@@ -213,7 +213,7 @@ consvar_t cv_homremoval = {"homremoval", "Yes", CV_SAVE, homremoval_cons_t, NULL
 consvar_t cv_maxportals = {"maxportals", "2", CV_SAVE, maxportals_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL};
 
 static CV_PossibleValue_t pointoangle_cons_t[] = {{0, "Ex"}, {1, "64"}, {0, NULL}};
-consvar_t cv_pointoangleexor64 = {"r_pointtoangle", "Ex", CV_SAVE, pointoangle_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL};
+consvar_t cv_pointoangleexor64 = {"r_pointtoangle", "64", CV_SAVE, pointoangle_cons_t, NULL, 0, NULL, NULL, 0, 0, NULL};
 
 void SplitScreen_OnChange(void)
 {
@@ -331,7 +331,7 @@ static void FlipCam4_OnChange(void)
 //
 // killough 5/2/98: reformatted
 //
-INT32 R_PointOnSide(fixed_t x, fixed_t y, node_t *restrict node)
+PUREFUNC INT32 R_PointOnSide(fixed_t x, fixed_t y, const node_t *restrict node)
 {
 	if (!node->dx)
 		return x <= node->x ? node->dy > 0 : node->dy < 0;
@@ -350,7 +350,7 @@ INT32 R_PointOnSide(fixed_t x, fixed_t y, node_t *restrict node)
 }
 
 // killough 5/2/98: reformatted
-INT32 R_PointOnSegSide(fixed_t x, fixed_t y, seg_t *line)
+PUREFUNC INT32 R_PointOnSegSide(fixed_t x, fixed_t y, const seg_t *line)
 {
 	fixed_t lx = line->v1->x;
 	fixed_t ly = line->v1->y;
@@ -1077,7 +1077,6 @@ subsector_t *R_IsPointInSubsector(fixed_t x, fixed_t y)
 	INT32 side, i;
 	size_t nodenum;
 	subsector_t *ret;
-	seg_t *seg;
 
 	// single subsector is a special case
 	if (numnodes == 0)
@@ -1106,31 +1105,6 @@ subsector_t *R_IsPointInSubsector(fixed_t x, fixed_t y)
 //
 
 static mobj_t *viewmobj;
-
-// recalc necessary stuff for mouseaiming
-// slopes are already calculated for the full possible view (which is 4*viewheight).
-// 18/08/18: (No it's actually 16*viewheight, thanks Jimita for finding this out)
-static void R_SetupFreelook(void)
-{
-	INT32 dy = 0;
-
-	// clip it in the case we are looking a hardware 90 degrees full aiming
-	// (lmps, network and use F12...)
-	if (rendermode == render_soft
-#ifdef HWRENDER
-		|| cv_grshearing.value
-#endif
-	)
-		G_SoftwareClipAimingPitch((INT32 *)&aimingangle);
-
-	if (rendermode == render_soft)
-	{
-		dy = (AIMINGTODY(aimingangle)>>FRACBITS) * viewwidth/BASEVIDWIDTH;
-		yslope = &yslopetab[viewheight*8 - (viewheight/2 + dy)];
-	}
-	centery = (viewheight/2) + dy;
-	centeryfrac = centery<<FRACBITS;
-}
 
 void R_SkyboxFrame(player_t *player)
 {

@@ -609,7 +609,7 @@ UINT8 K_GetKartColorByName(const char *name)
 }
 
 UINT8 K_GetHudColor(void)
-{	
+{
 	if (cv_colorizedhud.value){
 		if (cv_colorizedhudcolor.value) return cv_colorizedhudcolor.value;
 	}
@@ -4387,6 +4387,8 @@ void K_RepairOrbitChain(mobj_t *orbit)
 	// Then recount to make sure item amount is correct
 	if (orbit->target && orbit->target->player)
 	{
+		player_t *player = orbit->target->player;
+
 		INT32 num = 0;
 
 		mobj_t *cur = orbit->target->hnext;
@@ -4396,14 +4398,14 @@ void K_RepairOrbitChain(mobj_t *orbit)
 		{
 			prev = cur;
 			cur = cur->hnext;
-			if (++num > orbit->target->player->kartstuff[k_itemamount])
+			if (++num > player->kartstuff[k_itemamount])
 				P_RemoveMobj(prev);
 			else
 				prev->movedir = num;
 		}
 
-		if (orbit->target->player->kartstuff[k_itemamount] != num)
-			orbit->target->player->kartstuff[k_itemamount] = num;
+		if (player->kartstuff[k_itemamount] != num)
+			player->kartstuff[k_itemamount] = num;
 	}
 }
 
@@ -6918,7 +6920,7 @@ static patch_t *kp_lapsticker;
 static patch_t *kp_lapstickerbig;
 static patch_t *kp_lapstickerbig2;
 static patch_t *kp_lapstickerwide;
-static patch_t *kp_lapstickernarrow;
+//static patch_t *kp_lapstickernarrow;
 static patch_t *kp_splitlapflag;
 static patch_t *kp_bumpersticker;
 static patch_t *kp_bumperstickerwide;
@@ -6933,7 +6935,7 @@ static patch_t *kp_lapstickerclr;
 static patch_t *kp_lapstickerbigclr;
 static patch_t *kp_lapstickerbig2clr;
 static patch_t *kp_lapstickerwideclr;
-static patch_t *kp_lapstickernarrowclr;
+//static patch_t *kp_lapstickernarrowclr;
 static patch_t *kp_bumperstickerclr;
 static patch_t *kp_bumperstickerwideclr;
 static patch_t *kp_karmastickerclr;
@@ -7034,7 +7036,7 @@ void K_LoadKartHUDGraphics(void)
 	kp_timestickerwide = 		W_CachePatchName("K_STTIMW", PU_HUDGFX);
 	kp_lapsticker = 			W_CachePatchName("K_STLAPS", PU_HUDGFX);
 	kp_lapstickerwide = 		W_CachePatchName("K_STLAPW", PU_HUDGFX);
-	kp_lapstickernarrow = 		W_CachePatchName("K_STLAPN", PU_HUDGFX);
+	//kp_lapstickernarrow = 		W_CachePatchName("K_STLAPN", PU_HUDGFX);
 	kp_splitlapflag = 			W_CachePatchName("K_SPTLAP", PU_HUDGFX);
 	kp_bumpersticker = 			W_CachePatchName("K_STBALN", PU_HUDGFX);
 	kp_bumperstickerwide = 		W_CachePatchName("K_STBALW", PU_HUDGFX);
@@ -10615,11 +10617,11 @@ void K_drawKartHUD(void)
 		int xoff = cv_dnft_xoffset.value;
 
 		if (splitscreen > 1)
-			V_DrawCenteredString(BASEVIDWIDTH/4+xoff, LAPS_Y+1+yoff, K_calcSplitFlags(0), countstr);
+			V_DrawCenteredString(BASEVIDWIDTH/4+xoff, LAPS_Y+1+yoff, K_calcSplitFlags(V_SNAPTOBOTTOM), countstr);
 		else
 		{
 			INT32 karlen = strlen(countstr)*6; // half of 12
-			V_DrawKartString((BASEVIDWIDTH/2)-karlen+xoff, LAPS_Y+3+yoff, K_calcSplitFlags(0), countstr);
+			V_DrawKartString((BASEVIDWIDTH/2)-karlen+xoff, LAPS_Y+3+yoff, K_calcSplitFlags(V_SNAPTOBOTTOM), countstr);
 		}
 	}
 

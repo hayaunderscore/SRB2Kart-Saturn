@@ -72,6 +72,8 @@ static void SCR_ChangeFullscreen (void);
 
 consvar_t cv_fullscreen = {"fullscreen", "Yes", CV_SAVE|CV_CALL, CV_YesNo, SCR_ChangeFullscreen, 0, NULL, NULL, 0, 0, NULL};
 
+consvar_t cv_accuratefps = {"accuratefpscounter", "Off", CV_SAVE, CV_OnOff, NULL, 0, NULL, NULL, 0, 0, NULL};
+
 // =========================================================================
 //                           SCREEN VARIABLES
 // =========================================================================
@@ -83,15 +85,6 @@ UINT8 *scr_borderpatch; // flat used to fill the reduced view borders set at ST_
 
 //  Short and Tall sky drawer, for the current color mode
 void (*walldrawerfunc)(void);
-
-boolean R_486 = false;
-boolean R_586 = false;
-boolean R_MMX = false;
-boolean R_SSE = false;
-boolean R_3DNow = false;
-boolean R_MMXExt = false;
-boolean R_SSE2 = false;
-
 
 void SCR_SetMode(void)
 {
@@ -148,48 +141,6 @@ void SCR_SetMode(void)
 //
 void SCR_Startup(void)
 {
-	const CPUInfoFlags *RCpuInfo = I_CPUInfo();
-	if (!M_CheckParm("-NOCPUID") && RCpuInfo)
-	{
-#if defined (__i386__) || defined (_M_IX86) || defined (__WATCOMC__)
-		R_486 = true;
-#endif
-		if (RCpuInfo->RDTSC)
-			R_586 = true;
-		if (RCpuInfo->MMX)
-			R_MMX = true;
-		if (RCpuInfo->AMD3DNow)
-			R_3DNow = true;
-		if (RCpuInfo->MMXExt)
-			R_MMXExt = true;
-		if (RCpuInfo->SSE)
-			R_SSE = true;
-		if (RCpuInfo->SSE2)
-			R_SSE2 = true;
-		CONS_Printf("CPU Info: 486: %i, 586: %i, MMX: %i, 3DNow: %i, MMXExt: %i, SSE2: %i\n", R_486, R_586, R_MMX, R_3DNow, R_MMXExt, R_SSE2);
-	}
-
-	if (M_CheckParm("-486"))
-		R_486 = true;
-	if (M_CheckParm("-586"))
-		R_586 = true;
-	if (M_CheckParm("-MMX"))
-		R_MMX = true;
-	if (M_CheckParm("-3DNow"))
-		R_3DNow = true;
-	if (M_CheckParm("-MMXExt"))
-		R_MMXExt = true;
-
-	if (M_CheckParm("-SSE"))
-		R_SSE = true;
-	if (M_CheckParm("-noSSE"))
-		R_SSE = false;
-
-	if (M_CheckParm("-SSE2"))
-		R_SSE2 = true;
-
-	M_SetupMemcpy();
-
 	if (dedicated)
 	{
 		V_Init();
@@ -228,6 +179,7 @@ void SCR_Startup(void)
 
 	V_Init();
 	CV_RegisterVar(&cv_ticrate);
+	CV_RegisterVar(&cv_accuratefps);
 	CV_RegisterVar(&cv_menucaps);
 	CV_RegisterVar(&cv_constextsize);
 
@@ -397,9 +349,13 @@ double averageFPS = 0.0f;
 #ifdef USE_FPS_SAMPLES
 #define MAX_FRAME_TIME 0.05
 #define NUM_FPS_SAMPLES (16) // Number of samples to store
+#define NUM_FPS_SAMPLES2 (32) // Number of samples to store for inaccurate counter
 
 static double total_frame_time = 0.0;
 static int frame_index;
+
+static double fps_samples[NUM_FPS_SAMPLES2];
+static int fps_index;
 #endif
 
 static boolean fps_init = false;
@@ -408,6 +364,7 @@ static precise_t fps_enter = 0;
 void SCR_CalculateFPS(void)
 {
 	precise_t fps_finish = 0;
+	int i;
 
 	double frameElapsed = 0.0;
 
@@ -422,12 +379,26 @@ void SCR_CalculateFPS(void)
 	fps_enter = fps_finish;
 
 #ifdef USE_FPS_SAMPLES
-	total_frame_time += frameElapsed;
-	if (frame_index++ >= NUM_FPS_SAMPLES || total_frame_time >= MAX_FRAME_TIME)
+
+	if (cv_accuratefps.value)
 	{
-		averageFPS = 1.0 / (total_frame_time / frame_index);
-		total_frame_time = 0.0;
-		frame_index = 0;
+		total_frame_time += frameElapsed;
+		if (frame_index++ >= NUM_FPS_SAMPLES || total_frame_time >= MAX_FRAME_TIME)
+		{
+			averageFPS = 1.0 / (total_frame_time / frame_index);
+			total_frame_time = 0.0;
+			frame_index = 0;
+		}
+	}
+	else
+	{
+		fps_samples[fps_index] = frameElapsed / NUM_FPS_SAMPLES2;
+		fps_index = (fps_index + 1) % NUM_FPS_SAMPLES2;
+
+		averageFPS = 0.0;
+		for (i = 0; i < NUM_FPS_SAMPLES2; i++)
+			averageFPS += fps_samples[i];
+		averageFPS = 1.0 / averageFPS;
 	}
 #else
 	// Direct, unsampled counter.
