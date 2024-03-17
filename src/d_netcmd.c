@@ -823,7 +823,6 @@ void D_RegisterServerCommands(void)
 	CV_RegisterVar(&cv_maxdemosize);
 	
 	CV_RegisterVar(&cv_nativekeyboard);
-	CV_RegisterVar(&cv_cechotoggle);
 }
 
 // =========================================================================
