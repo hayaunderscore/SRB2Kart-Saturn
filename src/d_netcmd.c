@@ -821,8 +821,7 @@ void D_RegisterServerCommands(void)
 	CV_RegisterVar(&cv_recordmultiplayerdemos);
 	CV_RegisterVar(&cv_netdemosyncquality);
 	CV_RegisterVar(&cv_maxdemosize);
-	
-	CV_RegisterVar(&cv_nativekeyboard);
+	CV_RegisterVar(&cv_keyboardlayout);
 }
 
 // =========================================================================
@@ -1025,6 +1024,18 @@ void D_RegisterClientCommands(void)
 	CV_RegisterVar(&cv_lookbackaxis2);
 	CV_RegisterVar(&cv_lookbackaxis3);
 	CV_RegisterVar(&cv_lookbackaxis4);
+	CV_RegisterVar(&cv_custom1axis);
+	CV_RegisterVar(&cv_custom1axis2);
+	CV_RegisterVar(&cv_custom1axis3);
+	CV_RegisterVar(&cv_custom1axis4);
+	CV_RegisterVar(&cv_custom2axis);
+	CV_RegisterVar(&cv_custom2axis2);
+	CV_RegisterVar(&cv_custom2axis3);
+	CV_RegisterVar(&cv_custom2axis4);
+	CV_RegisterVar(&cv_custom3axis);
+	CV_RegisterVar(&cv_custom3axis2);
+	CV_RegisterVar(&cv_custom3axis3);
+	CV_RegisterVar(&cv_custom3axis4);
 	CV_RegisterVar(&cv_xdeadzone);
 	CV_RegisterVar(&cv_ydeadzone);
 	CV_RegisterVar(&cv_xdeadzone2);
@@ -1185,6 +1196,8 @@ void D_RegisterClientCommands(void)
 	CV_RegisterVar(&cv_discordstreamer);
 	CV_RegisterVar(&cv_discordasks);
 #endif
+
+	CV_RegisterVar(&cv_showspecstuff);
 
 	COM_AddCommand("listskins", Command_ListSkins);
 	COM_AddCommand("skinsearch", Command_SkinSearch);

@@ -265,7 +265,6 @@ void P_ResetScore(player_t *player)
 	player->scoreadd = 0;
 }
 
-
 //
 // P_FindLowestLap
 //
@@ -632,7 +631,8 @@ static UINT8 getPlayerPos(player_t *player)
 
 static boolean isPlayerLosing(player_t *player)
 {
-	if (G_BattleGametype()) {
+	if (G_BattleGametype())
+	{
 		UINT8 pos = 1;
 		UINT8 maxpos = 1;
 
@@ -1830,7 +1830,6 @@ static void P_DoPlayerHeadSigns(player_t *player)
 	}
 }
 
-
 //
 // P_DoJumpShield
 //
@@ -2432,7 +2431,7 @@ static void P_MovePlayer(player_t *player)
 	else if (!S_SoundPlaying(player->mo, sfx_drift) && onground && player->kartstuff[k_drift] != 0)
 		S_StartSound(player->mo, sfx_drift);
 	// Ok, we'll stop now.
-	else if (player->kartstuff[k_drift] == 0)
+	else if (player->kartstuff[k_drift] == 0 || !onground)
 		S_StopSoundByID(player->mo, sfx_drift);
 
 	K_MoveKartPlayer(player, onground);
@@ -3311,7 +3310,6 @@ void P_DemoCameraMovement(camera_t *cam)
 		cam->aiming = R_PointToAngle2(0, cam->z, R_PointToDist2(cam->x, cam->y, lastp->mo->x, lastp->mo->y), lastp->mo->z + lastp->mo->scale*128*P_MobjFlip(lastp->mo));	// This is still unholy. Aim a bit above their heads.
 	}
 
-
 	cam->momx = cam->momy = cam->momz = 0;
 	if (cmd->forwardmove != 0)
 	{
@@ -3526,7 +3524,6 @@ boolean P_MoveChaseCamera(player_t *player, camera_t *thiscam, boolean resetcall
 
 	if (P_CameraThinker(player, thiscam, resetcalled))
 		return true;
-
 
 	if (thiscam == &camera[1]) // Camera 2
 	{
@@ -3971,6 +3968,18 @@ boolean P_MoveChaseCamera(player_t *player, camera_t *thiscam, boolean resetcall
 	return (x == thiscam->x && y == thiscam->y && z == thiscam->z && angle == thiscam->aiming);
 }
 
+void P_ResetLocalCamAiming(player_t *player)
+{
+	for (int i = 0; i <= splitscreen; i++)
+	{
+		UINT8 id = (i == 0) ? consoleplayer : displayplayers[i];
+		if (player - players == id)
+		{
+			localaiming[i] = 0;
+		}
+	}
+}
+
 boolean P_SpectatorJoinGame(player_t *player)
 {
 	// Team changing isn't allowed.
@@ -4020,10 +4029,9 @@ boolean P_SpectatorJoinGame(player_t *player)
 		player->kartstuff[k_spectatewait] = 0;
 		player->ctfteam = changeto;
 		player->playerstate = PST_REBORN;
-		
-		//center camera if its not already
-		if ((P_IsLocalPlayer(player)) && localaiming[0] != 0)
-			localaiming[0] = 0;
+
+		//center camera
+		P_ResetLocalCamAiming(player);
 
 		//Reset away view
 		if (P_IsLocalPlayer(player) && displayplayers[0] != consoleplayer)
@@ -4049,9 +4057,8 @@ boolean P_SpectatorJoinGame(player_t *player)
 		player->kartstuff[k_spectatewait] = 0;
 		player->playerstate = PST_REBORN;
 
-		//center camera if its not already
-		if ((P_IsLocalPlayer(player)) && localaiming[0] != 0)
-			localaiming[0] = 0;
+		//center camera
+		P_ResetLocalCamAiming(player);
 
 		//Reset away view
 		if (P_IsLocalPlayer(player) && displayplayers[0] != consoleplayer)
@@ -4819,8 +4826,7 @@ void P_PlayerThink(player_t *player)
 		player->losstime--;
 
 	// Flash player after being hit.
-	if (!(//player->pflags & PF_NIGHTSMODE ||
-		player->kartstuff[k_hyudorotimer] // SRB2kart - fixes Hyudoro not flashing when it should.
+	if (!(player->kartstuff[k_hyudorotimer] // SRB2kart - fixes Hyudoro not flashing when it should.
 		|| player->kartstuff[k_growshrinktimer] > 0 // Grow doesn't flash either.
 		|| player->kartstuff[k_respawn] // Respawn timer (for drop dash effect)
 		|| (player->pflags & PF_TIMEOVER) // NO CONTEST explosion
